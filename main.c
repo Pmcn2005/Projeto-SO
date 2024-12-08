@@ -1,35 +1,38 @@
+#include <dirent.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "constants.h"
 #include "operations.h"
 #include "parser.h"
+#include "utils.h"
 
-int main() {
-    if (kvs_init()) {
-        fprintf(stderr, "Failed to initialize KVS\n");
-        return 1;
-    }
+const char *directoryPath;
 
-    while (1) {
+void kvs_main(int file_in, int file_out) {
+    int flag = 1;
+
+    while (flag) {
         char keys[MAX_WRITE_SIZE][MAX_STRING_SIZE] = {0};
         char values[MAX_WRITE_SIZE][MAX_STRING_SIZE] = {0};
         unsigned int delay;
         size_t num_pairs;
 
-        printf("> ");
-        fflush(stdout);
-
-        switch (get_next(STDIN_FILENO)) {
+        switch (get_next(file_in)) {
             case CMD_WRITE:
-                num_pairs = parse_write(STDIN_FILENO, keys, values,
-                                        MAX_WRITE_SIZE, MAX_STRING_SIZE);
+                num_pairs = parse_write(file_in, keys, values, MAX_WRITE_SIZE,
+                                        MAX_STRING_SIZE);
                 if (num_pairs == 0) {
                     fprintf(stderr, "Invalid command. See HELP for usage\n");
                     continue;
                 }
+
+                // ordenar keys e values por ordem alfabética de keys
+                sortPairs(num_pairs, keys, values);
 
                 if (kvs_write(num_pairs, keys, values)) {
                     fprintf(stderr, "Failed to write pair\n");
@@ -38,40 +41,46 @@ int main() {
                 break;
 
             case CMD_READ:
-                num_pairs = parse_read_delete(STDIN_FILENO, keys,
-                                              MAX_WRITE_SIZE, MAX_STRING_SIZE);
+                num_pairs = parse_read_delete(file_in, keys, MAX_WRITE_SIZE,
+                                              MAX_STRING_SIZE);
 
                 if (num_pairs == 0) {
                     fprintf(stderr, "Invalid command. See HELP for usage\n");
                     continue;
                 }
 
-                if (kvs_read(num_pairs, keys)) {
+                // ordenar keys e values por ordem alfabética de keys
+                sortPairs(num_pairs, keys, values);
+
+                if (kvs_read(num_pairs, keys, file_out)) {
                     fprintf(stderr, "Failed to read pair\n");
                 }
                 break;
 
             case CMD_DELETE:
-                num_pairs = parse_read_delete(STDIN_FILENO, keys,
-                                              MAX_WRITE_SIZE, MAX_STRING_SIZE);
+                num_pairs = parse_read_delete(file_in, keys, MAX_WRITE_SIZE,
+                                              MAX_STRING_SIZE);
 
                 if (num_pairs == 0) {
                     fprintf(stderr, "Invalid command. See HELP for usage\n");
                     continue;
                 }
 
-                if (kvs_delete(num_pairs, keys)) {
+                // ordenar keys e values por ordem alfabética de keys
+                sortPairs(num_pairs, keys, values);
+
+                if (kvs_delete(num_pairs, keys, file_out)) {
                     fprintf(stderr, "Failed to delete pair\n");
                 }
                 break;
 
             case CMD_SHOW:
 
-                kvs_show();
+                kvs_show(file_out);
                 break;
 
             case CMD_WAIT:
-                if (parse_wait(STDIN_FILENO, &delay, NULL) == -1) {
+                if (parse_wait(file_in, &delay, NULL) == -1) {
                     fprintf(stderr, "Invalid command. See HELP for usage\n");
                     continue;
                 }
@@ -110,8 +119,68 @@ int main() {
                 break;
 
             case EOC:
-                kvs_terminate();
-                return 0;
+                flag = 0;
         }
     }
+}
+
+int main(int argc, char *argv[]) {
+    if (argc < 3) {
+        fprintf(stderr, "Usage: %s <directory_path> <number_backups>\n",
+                argv[0]);
+        return 1;
+    }
+
+    directoryPath = argv[1];
+    DIR *dir = opendir(directoryPath);
+    int num_backups = atoi(argv[2]);
+
+    if (dir == NULL) {
+        fprintf(stderr, "Failed to open directory\n");
+        return 1;
+    }
+
+    if (num_backups < 0) {
+        fprintf(stderr, "Invalid number of backups\n");
+        return 1;
+    }
+
+    if (kvs_init()) {
+        fprintf(stderr, "Failed to initialize KVS\n");
+        return 1;
+    }
+
+    char **jobs = NULL;
+    int job_count = 0;
+    getJobs(&jobs, &job_count, dir, directoryPath);
+
+    for (ssize_t i = 0; i < job_count; i++) {
+        int job_file = open(jobs[i], O_RDONLY);
+        if (job_file == -1) {
+            fprintf(stderr, "Failed to open file\n");
+            return 1;
+        }
+
+        // create new path for output file
+        char *job_out_path = strdup(jobs[i]);
+        char *ponto = strrchr(job_out_path, '.');
+        strcpy(ponto, ".out");
+
+        int job_out = open(job_out_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+
+        kvs_main(job_file, job_out);
+
+        close(job_file);
+        close(job_out);
+        free(job_out_path);
+    }
+
+    kvs_terminate();
+    free(dir);
+    for (int i = 0; i < job_count; i++) {
+        free(jobs[i]);
+    }
+    free(jobs);
+
+    return 0;
 }
