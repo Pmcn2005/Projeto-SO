@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "constants.h"
@@ -13,8 +14,12 @@
 
 const char *directoryPath;
 
-void kvs_main(int file_in, int file_out) {
+int num_max_backups;
+int current_backups = 0;
+
+void kvs_main(int file_in, int file_out, const char *job_name) {
     int flag = 1;
+    int exectuded_backups = 0;
 
     while (flag) {
         char keys[MAX_WRITE_SIZE][MAX_STRING_SIZE] = {0};
@@ -92,9 +97,16 @@ void kvs_main(int file_in, int file_out) {
                 break;
 
             case CMD_BACKUP:
+                exectuded_backups++;
 
-                if (kvs_backup()) {
+                while (current_backups >= num_max_backups) {
+                    wait(NULL);  // Espera por um processo filho terminar
+                    current_backups--;
+                }
+
+                if (kvs_backup(job_name, exectuded_backups)) {
                     fprintf(stderr, "Failed to perform backup.\n");
+                    exectuded_backups--;
                 }
                 break;
 
@@ -133,14 +145,14 @@ int main(int argc, char *argv[]) {
 
     directoryPath = argv[1];
     DIR *dir = opendir(directoryPath);
-    int num_backups = atoi(argv[2]);
+    num_max_backups = atoi(argv[2]);
 
     if (dir == NULL) {
         fprintf(stderr, "Failed to open directory\n");
         return 1;
     }
 
-    if (num_backups < 0) {
+    if (num_max_backups < 0) {
         fprintf(stderr, "Invalid number of backups\n");
         return 1;
     }
@@ -168,7 +180,7 @@ int main(int argc, char *argv[]) {
 
         int job_out = open(job_out_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
 
-        kvs_main(job_file, job_out);
+        kvs_main(job_file, job_out, jobs[i]);
 
         close(job_file);
         close(job_out);

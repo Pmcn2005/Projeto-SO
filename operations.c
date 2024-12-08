@@ -1,7 +1,10 @@
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "constants.h"
 #include "kvs.h"
@@ -117,7 +120,45 @@ void kvs_show(int fd_out) {
     }
 }
 
-int kvs_backup() { return 0; }
+int kvs_backup(const char* job_name, int current_backup) {
+    pid_t pid = fork();
+
+    if (pid < 0) {
+        fprintf(stderr, "Failed to create backup process\n");
+        return 1;
+    } else if (pid == 0) {
+        // Child process
+
+        // create new path for backup file
+        char* backup_path = strdup(job_name);
+        backup_path[strlen(backup_path) - 4] = '\0';
+
+        char buffer[MAX_JOB_FILE_NAME_SIZE];
+        sprintf(buffer, "-%d.bck", current_backup);
+        backup_path =
+            realloc(backup_path, strlen(backup_path) + strlen(buffer) + 1);
+        strcat(backup_path, buffer);
+
+        int backup_file = open(backup_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+        if (backup_file == -1) {
+            fprintf(stderr, "Failed to open backup file\n");
+            return 1;
+        }
+
+        kvs_show(backup_file);
+
+        close(backup_file);
+        free(backup_path);
+
+        exit(0);
+
+    } else {
+        // Parent process
+        return 0;
+    }
+
+    return 0;
+}
 
 void kvs_wait(unsigned int delay_ms) {
     struct timespec delay = delay_to_timespec(delay_ms);
