@@ -1,3 +1,4 @@
 SHOW
 WRITE [(a,3)(b,4)]
+BACKUP
 READ [h]
