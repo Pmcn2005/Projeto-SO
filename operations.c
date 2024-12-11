@@ -121,8 +121,8 @@ void kvs_show(int fd_out) {
     mutex_lock(&htMutex);
 
     for (int i = 0; i < TABLE_SIZE; i++) {
-        KeyNode* keyNode = kvs_table->table[i];
         rwl_wrlock(&kvs_table->mutex[i]);
+        KeyNode* keyNode = kvs_table->table[i];
 
         while (keyNode != NULL) {
             char buffer[MAX_STRING_SIZE * 2 + 12];  // Adjust size as needed
@@ -152,7 +152,7 @@ void kvs_show_backup(int fd_out) {
     }
 }
 
-int kvs_backup(const char* job_name, int current_backup) {
+int kvs_backup(char* job_name, int current_backup) {
     pid_t pid = fork();
 
     if (pid < 0) {
@@ -179,20 +179,30 @@ int kvs_backup(const char* job_name, int current_backup) {
 
         strcat(backup_path, buffer);
 
+        // char backup_path[MAX_JOB_FILE_NAME_SIZE];
+        // strncpy(backup_path, job_name, strlen(job_name) - 4);
+        // backup_path[strlen(job_name) - 4] = '\0';
+        // snprintf(backup_path + strlen(backup_path),
+        //          MAX_JOB_FILE_NAME_SIZE - strlen(backup_path), "-%d.bck",
+        //          current_backup);
+
         int backup_file = open(backup_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
 
         if (backup_file == -1) {
             fprintf(stderr, "Failed to open backup file\n");
-            free(backup_path);
+            // free(backup_path);
             return 1;
         }
 
         kvs_show_backup(backup_file);
 
         close(backup_file);
-        free(backup_path);
 
-        exit(0);
+        temp = NULL;
+        free(backup_path);
+        backup_path = NULL;
+
+        _exit(0);
 
     } else {
         // Parent process

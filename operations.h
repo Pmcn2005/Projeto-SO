@@ -39,7 +39,7 @@ void kvs_show(int fd_out);
 /// Creates a backup of the KVS state and stores it in the correspondent
 /// backup file
 /// @return 0 if the backup was successful, 1 otherwise.
-int kvs_backup();
+int kvs_backup(char* job_name, int current_backup);
 
 /// Waits for the last backup to be called.
 void kvs_wait_backup();

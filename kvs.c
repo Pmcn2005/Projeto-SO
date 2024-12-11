@@ -82,7 +82,7 @@ char *read_pair(HashTable *ht, const char *key) {
 int delete_pair(HashTable *ht, const char *key) {
     int index = hash(key);
 
-    rwl_rdlock(&ht->mutex[index]);
+    rwl_wrlock(&ht->mutex[index]);
     KeyNode *keyNode = ht->table[index];
     KeyNode *prevNode = NULL;
 

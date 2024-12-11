@@ -44,6 +44,7 @@ void kvs_main(char *job_name) {
 
     if (file_out == -1) {
         fprintf(stderr, "Failed to open file\n");
+        free(job_out_path);
         return;
     }
 
@@ -158,7 +159,7 @@ void kvs_main(char *job_name) {
                     "  DELETE [key,key2,...]\n"
                     "  SHOW\n"
                     "  WAIT <delay_ms>\n"
-                    "  BACKUP\n"  // Not implemented
+                    "  BACKUP\n"
                     "  HELP\n");
 
                 break;

@@ -7,8 +7,8 @@
 
 #include "constants.h"
 
-// this will read the files from a directory and add them to the list if they
-// are .job files
+// function that will read the files from a directory and add them to the list
+// if they are .job files
 char **getJobs(int *job_count, DIR *dir, char *directory_path) {
     struct dirent *entry;
     int count = 0;

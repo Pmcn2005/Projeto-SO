@@ -6,6 +6,8 @@ CFLAGS = -g -std=c17 -D_POSIX_C_SOURCE=200809L \
 		 -Wcast-align -Wconversion -Wfloat-equal -Wformat=2 -Wnull-dereference -Wshadow -Wsign-conversion -Wswitch-enum -Wundef -Wunreachable-code -Wunused \
 		 -fsanitize=address -fsanitize=undefined
 
+# CFLAGS += -fsanitize=thread
+
 ifneq ($(shell uname -s),Darwin) # if not MacOS
 	CFLAGS += -fmax-errors=5
 endif
