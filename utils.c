@@ -1,37 +1,53 @@
 #include <dirent.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-#define MAX_JOB_FILE_NAME_SIZE 256
-
 #include "constants.h"
 
 // this will read the files from a directory and add them to the list if they
 // are .job files
-void getJobs(char ***jobs, int *job_count, DIR *dir,
-             const char *directory_path) {
+char **getJobs(int *job_count, DIR *dir, char *directory_path) {
     struct dirent *entry;
     int count = 0;
-    int capacity = 10;  // Initial capacity
-    *jobs = malloc((size_t)capacity * sizeof(char *));
 
     while ((entry = readdir(dir)) != NULL) {
-        if (count >= capacity) {
-            capacity *= 2;
-            *jobs = realloc(*jobs, (size_t)capacity * sizeof(char *));
-        }
         if (strstr(entry->d_name, ".job") != NULL) {
-            size_t path_len =
-                strlen(directory_path) + strlen(entry->d_name) + 2;
-            (*jobs)[count] = malloc(path_len);
-            snprintf((*jobs)[count], path_len, "%s/%s", directory_path,
-                     entry->d_name);
             count++;
         }
     }
+
+    char **jobs = malloc((size_t)count * sizeof(char *));
+    count = 0;
+
+    rewinddir(dir);
+
+    while ((entry = readdir(dir)) != NULL) {
+        if (strstr(entry->d_name, ".job") != NULL) {
+            // verify if last caracter / is present in directory_path
+            if (directory_path[strlen(directory_path) - 1] != '/') {
+                size_t path_len =
+                    strlen(directory_path) + strlen(entry->d_name) + 2;
+                jobs[count] = malloc(path_len * sizeof(char));
+                snprintf(jobs[count], path_len, "%s/%s", directory_path,
+                         entry->d_name);
+            } else {
+                size_t path_len =
+                    strlen(directory_path) + strlen(entry->d_name) + 1;
+                jobs[count] = malloc(path_len * sizeof(char));
+                snprintf(jobs[count], path_len, "%s%s", directory_path,
+                         entry->d_name);
+            }
+            count++;
+        }
+    }
+
     *job_count = count;
+    closedir(dir);
+    free(entry);
+    return jobs;
 }
 
 // function to order the keys and values in alphabetical order of keys
@@ -56,5 +72,104 @@ void tryWrite(int fd, const char *buffer, size_t size) {
     if (write(fd, buffer, size) != (ssize_t)size) {
         fprintf(stderr, "Failed to write to file\n");
         exit(1);
+    }
+}
+
+/*
+ * Locks the rwlock to write-read.
+ * Exits with failure if unsuccessful.
+ */
+void rwl_wrlock(pthread_rwlock_t *rwl) {
+    if (pthread_rwlock_wrlock(rwl) != 0) {
+        perror("Failed to lock RWlock");
+        exit(EXIT_FAILURE);
+    }
+}
+
+/*
+ * Locks the rwlock to read-only.
+ * Exits with failure if unsuccessful.
+ */
+void rwl_rdlock(pthread_rwlock_t *rwl) {
+    if (pthread_rwlock_rdlock(rwl) != 0) {
+        perror("Failed to lock RWlock");
+        exit(EXIT_FAILURE);
+    }
+}
+
+/*
+ * Unlocks the rwlock.
+ * Exits with failure if unsuccessful.
+ */
+void rwl_unlock(pthread_rwlock_t *rwl) {
+    if (pthread_rwlock_unlock(rwl) != 0) {
+        perror("Failed to unlock RWlock");
+        exit(EXIT_FAILURE);
+    }
+}
+
+/*
+ * Initializes the rwlock.
+ * Exits with failure if unsuccessful.
+ */
+void rwl_init(pthread_rwlock_t *rwl) {
+    if (pthread_rwlock_init(rwl, NULL) != 0) {
+        perror("Failed to init RWlock");
+        exit(EXIT_FAILURE);
+    }
+}
+
+/*
+ * Destroys the rwlock.
+ * Exits with failure if unsuccessful.
+ */
+void rwl_destroy(pthread_rwlock_t *rwl) {
+    if (pthread_rwlock_destroy(rwl) != 0) {
+        perror("Failed to destroy RWlock");
+        exit(EXIT_FAILURE);
+    }
+}
+
+/*
+ * Locks the mutex.
+ * Exits with failure if unsuccessful.
+ */
+void mutex_lock(pthread_mutex_t *mutex) {
+    if (pthread_mutex_lock(mutex) != 0) {
+        perror("Failed to lock Mutex");
+        exit(EXIT_FAILURE);
+    }
+}
+
+/*
+ * Unlocks the mutex.
+ * Exits with failure if unsuccessful.
+ */
+void mutex_unlock(pthread_mutex_t *mutex) {
+    if (pthread_mutex_unlock(mutex) != 0) {
+        perror("Failed to unlock Mutex");
+        exit(EXIT_FAILURE);
+    }
+}
+
+/*
+ * Initializes the mutex.
+ * Exits with failure if unsuccessful.
+ */
+void mutex_init(pthread_mutex_t *mutex) {
+    if (pthread_mutex_init(mutex, NULL) != 0) {
+        perror("Failed to init Mutex");
+        exit(EXIT_FAILURE);
+    }
+}
+
+/*
+ * Destroys the mutex.
+ * Exits with failure if unsuccessful.
+ */
+void mutex_destroy(pthread_mutex_t *mutex) {
+    if (pthread_mutex_destroy(mutex) != 0) {
+        perror("Failed to destroy Mutex");
+        exit(EXIT_FAILURE);
     }
 }

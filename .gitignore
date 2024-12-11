@@ -50,7 +50,9 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
-*.h
+
 kvs
-*.job
+*.out
+*.bck
+
 .vscode

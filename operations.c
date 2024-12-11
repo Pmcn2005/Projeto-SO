@@ -11,6 +11,7 @@
 #include "utils.h"
 
 static struct HashTable* kvs_table = NULL;
+pthread_mutex_t htMutex = PTHREAD_MUTEX_INITIALIZER;
 
 /// Calculates a timespec from a delay in milliseconds.
 /// @param delay_ms Delay in milliseconds.
@@ -26,6 +27,10 @@ int kvs_init() {
     }
 
     kvs_table = create_hash_table();
+    for (int i = 0; i < TABLE_SIZE; i++) {
+        rwl_init(&kvs_table->mutex[i]);
+    }
+
     return kvs_table == NULL;
 }
 
@@ -34,6 +39,12 @@ int kvs_terminate() {
         fprintf(stderr, "KVS state must be initialized\n");
         return 1;
     }
+
+    for (int i = 0; i < TABLE_SIZE; i++) {
+        rwl_destroy(&kvs_table->mutex[i]);
+    }
+
+    mutex_destroy(&htMutex);
 
     free_table(kvs_table);
     return 0;
@@ -107,10 +118,31 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int fd_out) {
 }
 
 void kvs_show(int fd_out) {
+    mutex_lock(&htMutex);
+
     for (int i = 0; i < TABLE_SIZE; i++) {
         KeyNode* keyNode = kvs_table->table[i];
+        rwl_wrlock(&kvs_table->mutex[i]);
+
         while (keyNode != NULL) {
-            // printf("(%s, %s)\n", keyNode->key, keyNode->value);
+            char buffer[MAX_STRING_SIZE * 2 + 12];  // Adjust size as needed
+            sprintf(buffer, "(%s, %s)\n", keyNode->key, keyNode->value);
+            tryWrite(fd_out, buffer, strlen(buffer));
+
+            keyNode = keyNode->next;  // Move to the next node
+        }
+
+        rwl_unlock(&kvs_table->mutex[i]);
+    }
+
+    mutex_unlock(&htMutex);
+}
+
+void kvs_show_backup(int fd_out) {
+    for (int i = 0; i < TABLE_SIZE; i++) {
+        KeyNode* keyNode = kvs_table->table[i];
+
+        while (keyNode != NULL) {
             char buffer[MAX_STRING_SIZE * 2 + 12];  // Adjust size as needed
             sprintf(buffer, "(%s, %s)\n", keyNode->key, keyNode->value);
             tryWrite(fd_out, buffer, strlen(buffer));
@@ -128,24 +160,34 @@ int kvs_backup(const char* job_name, int current_backup) {
         return 1;
     } else if (pid == 0) {
         // Child process
-
         // create new path for backup file
         char* backup_path = strdup(job_name);
-        backup_path[strlen(backup_path) - 4] = '\0';
+        char* ponto = strrchr(backup_path, '.');
+        strcpy(ponto, "");
 
-        char buffer[MAX_JOB_FILE_NAME_SIZE];
+        char buffer[10];
         sprintf(buffer, "-%d.bck", current_backup);
-        backup_path =
+
+        char* temp =
             realloc(backup_path, strlen(backup_path) + strlen(buffer) + 1);
+        if (temp == NULL) {
+            fprintf(stderr, "Failed to reallocate memory\n");
+            free(backup_path);
+            return 1;
+        }
+        backup_path = temp;
+
         strcat(backup_path, buffer);
 
         int backup_file = open(backup_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+
         if (backup_file == -1) {
             fprintf(stderr, "Failed to open backup file\n");
+            free(backup_path);
             return 1;
         }
 
-        kvs_show(backup_file);
+        kvs_show_backup(backup_file);
 
         close(backup_file);
         free(backup_path);
