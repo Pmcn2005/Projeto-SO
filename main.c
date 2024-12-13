@@ -130,6 +130,7 @@ void kvs_main(char *job_name) {
                     mutex_lock(&backup_mutex);
                     if (active_backups < max_backups) {
                         active_backups++;
+
                         mutex_unlock(&backup_mutex);
                         break;
                     }
@@ -144,6 +145,26 @@ void kvs_main(char *job_name) {
                 mutex_lock(&backup_mutex);
                 active_backups--;
                 mutex_unlock(&backup_mutex);
+
+                // mutex_lock(&backup_mutex);
+
+                // if (active_backups >= max_backups) {
+                //     mutex_unlock(&backup_mutex);
+                //     wait(NULL);
+                //     mutex_lock(&backup_mutex);
+                //     active_backups--;
+                //     // mutex_unlock(&backup_mutex);
+                // }
+                // mutex_unlock(&backup_mutex);
+
+                // if (kvs_backup(job_name, num_backup_name)) {
+                //     fprintf(stderr, "Failed to perform backup.\n");
+                //     num_backup_name--;
+                // }
+
+                // mutex_lock(&backup_mutex);
+                // active_backups++;
+                // mutex_unlock(&backup_mutex);
 
                 break;
 
@@ -202,10 +223,10 @@ void *thread_function(void *arg) {
 
 int main(int argc, char *argv[]) {
     if (argc < 4) {
-        fprintf(
-            stderr,
-            "Usage: %s <directory_path> <number_backups> <number_threads>\n",
-            argv[0]);
+        fprintf(stderr,
+                "Usage: %s <directory_path> <number_backups> "
+                "<number_threads>\n",
+                argv[0]);
         return 1;
     }
 
@@ -236,7 +257,10 @@ int main(int argc, char *argv[]) {
     char **jobs = getJobs(&job_count, dir, directoryPath);
 
     ThreadData data = {
-        .file_paths = jobs, .num_files = job_count, .current_file = 0};
+        .file_paths = jobs,
+        .num_files = job_count,
+        .current_file = 0,
+    };
 
     mutex_init(&data.mutex);
 
@@ -258,7 +282,6 @@ int main(int argc, char *argv[]) {
     }
     free(jobs);
     mutex_destroy(&data.mutex);
-    mutex_destroy(&backup_mutex);
 
     return 0;
 }

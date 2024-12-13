@@ -11,7 +11,6 @@
 #include "utils.h"
 
 static struct HashTable* kvs_table = NULL;
-pthread_mutex_t htMutex = PTHREAD_MUTEX_INITIALIZER;
 
 /// Calculates a timespec from a delay in milliseconds.
 /// @param delay_ms Delay in milliseconds.
@@ -30,6 +29,7 @@ int kvs_init() {
     for (int i = 0; i < TABLE_SIZE; i++) {
         rwl_init(&kvs_table->mutex[i]);
     }
+    rwl_init(&kvs_table->htMutex);
 
     return kvs_table == NULL;
 }
@@ -44,7 +44,7 @@ int kvs_terminate() {
         rwl_destroy(&kvs_table->mutex[i]);
     }
 
-    mutex_destroy(&htMutex);
+    rwl_destroy(&kvs_table->htMutex);
 
     free_table(kvs_table);
     return 0;
@@ -57,12 +57,35 @@ int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE],
         return 1;
     }
 
+    rwl_rdlock(&kvs_table->htMutex);
+
+    // lista de bool para verificar se o lock ja foi feito
+    int locks[26] = {0};
+
+    // lock the mutex that correspond to the hash of the key
+    for (size_t i = 0; i < num_pairs; i++) {
+        if (locks[hash(keys[i])] == 0) {
+            rwl_wrlock(&kvs_table->mutex[hash(keys[i])]);
+            locks[hash(keys[i])] = 1;
+        }
+    }
+
     for (size_t i = 0; i < num_pairs; i++) {
         if (write_pair(kvs_table, keys[i], values[i]) != 0) {
             fprintf(stderr, "Failed to write keypair (%s,%s)\n", keys[i],
                     values[i]);
         }
     }
+
+    // unlock the mutex that correspond to the hash of the key
+    for (size_t i = 0; i < num_pairs; i++) {
+        if (locks[hash(keys[i])] == 1) {
+            rwl_unlock(&kvs_table->mutex[hash(keys[i])]);
+            locks[hash(keys[i])] = 0;
+        }
+    }
+
+    rwl_unlock(&kvs_table->htMutex);
 
     return 0;
 }
@@ -71,6 +94,18 @@ int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int fd_out) {
     if (kvs_table == NULL) {
         fprintf(stderr, "KVS state must be initialized\n");
         return 1;
+    }
+
+    rwl_rdlock(&kvs_table->htMutex);
+
+    int locks[26] = {0};
+
+    // lock the mutex that correspond to the hash of the key
+    for (size_t i = 0; i < num_pairs; i++) {
+        if (locks[hash(keys[i])] == 0) {
+            rwl_rdlock(&kvs_table->mutex[hash(keys[i])]);
+            locks[hash(keys[i])] = 1;
+        }
     }
 
     tryWrite(fd_out, "[", 1);
@@ -89,6 +124,17 @@ int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int fd_out) {
         free(result);
     }
     tryWrite(fd_out, "]\n", 2);
+
+    // unlock the mutex that correspond to the hash of the key
+    for (size_t i = 0; i < num_pairs; i++) {
+        if (locks[hash(keys[i])] == 1) {
+            rwl_unlock(&kvs_table->mutex[hash(keys[i])]);
+            locks[hash(keys[i])] = 0;
+        }
+    }
+
+    rwl_unlock(&kvs_table->htMutex);
+
     return 0;
 }
 
@@ -97,6 +143,18 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int fd_out) {
         fprintf(stderr, "KVS state must be initialized\n");
         return 1;
     }
+
+    rwl_rdlock(&kvs_table->htMutex);
+    int locks[26] = {0};
+
+    // lock the mutex that correspond to the hash of the key
+    for (size_t i = 0; i < num_pairs; i++) {
+        if (locks[hash(keys[i])] == 0) {
+            rwl_wrlock(&kvs_table->mutex[hash(keys[i])]);
+            locks[hash(keys[i])] = 1;
+        }
+    }
+
     int aux = 0;
 
     for (size_t i = 0; i < num_pairs; i++) {
@@ -114,31 +172,22 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int fd_out) {
         tryWrite(fd_out, "]\n", 2);
     }
 
+    // unlock the mutex that correspond to the hash of the key
+    for (size_t i = 0; i < num_pairs; i++) {
+        if (locks[hash(keys[i])] == 1) {
+            rwl_unlock(&kvs_table->mutex[hash(keys[i])]);
+            locks[hash(keys[i])] = 0;
+        }
+    }
+
+    rwl_unlock(&kvs_table->htMutex);
+
     return 0;
 }
 
 void kvs_show(int fd_out) {
-    mutex_lock(&htMutex);
+    rwl_wrlock(&kvs_table->htMutex);
 
-    for (int i = 0; i < TABLE_SIZE; i++) {
-        rwl_wrlock(&kvs_table->mutex[i]);
-        KeyNode* keyNode = kvs_table->table[i];
-
-        while (keyNode != NULL) {
-            char buffer[MAX_STRING_SIZE * 2 + 12];  // Adjust size as needed
-            sprintf(buffer, "(%s, %s)\n", keyNode->key, keyNode->value);
-            tryWrite(fd_out, buffer, strlen(buffer));
-
-            keyNode = keyNode->next;  // Move to the next node
-        }
-
-        rwl_unlock(&kvs_table->mutex[i]);
-    }
-
-    mutex_unlock(&htMutex);
-}
-
-void kvs_show_backup(int fd_out) {
     for (int i = 0; i < TABLE_SIZE; i++) {
         KeyNode* keyNode = kvs_table->table[i];
 
@@ -150,6 +199,8 @@ void kvs_show_backup(int fd_out) {
             keyNode = keyNode->next;  // Move to the next node
         }
     }
+
+    rwl_unlock(&kvs_table->htMutex);
 }
 
 int kvs_backup(char* job_name, int current_backup) {
@@ -160,6 +211,7 @@ int kvs_backup(char* job_name, int current_backup) {
         return 1;
     } else if (pid == 0) {
         // Child process
+
         // create new path for backup file
         char* backup_path = strdup(job_name);
         char* ponto = strrchr(backup_path, '.');
@@ -179,22 +231,14 @@ int kvs_backup(char* job_name, int current_backup) {
 
         strcat(backup_path, buffer);
 
-        // char backup_path[MAX_JOB_FILE_NAME_SIZE];
-        // strncpy(backup_path, job_name, strlen(job_name) - 4);
-        // backup_path[strlen(job_name) - 4] = '\0';
-        // snprintf(backup_path + strlen(backup_path),
-        //          MAX_JOB_FILE_NAME_SIZE - strlen(backup_path), "-%d.bck",
-        //          current_backup);
-
         int backup_file = open(backup_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
 
         if (backup_file == -1) {
             fprintf(stderr, "Failed to open backup file\n");
-            // free(backup_path);
             return 1;
         }
 
-        kvs_show_backup(backup_file);
+        kvs_show(backup_file);
 
         close(backup_file);
 
@@ -206,6 +250,7 @@ int kvs_backup(char* job_name, int current_backup) {
 
     } else {
         // Parent process
+
         return 0;
     }
 

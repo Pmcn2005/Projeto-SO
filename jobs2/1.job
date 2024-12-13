@@ -1,0 +1,7 @@
+WRITE [(andre,OLA)(antonio,343)]
+READ [andre]
+SHOW
+DELETE [andre]
+SHOW
+BACKUP
+SHOW
