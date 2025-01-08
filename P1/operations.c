@@ -59,7 +59,7 @@ int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE],
 
     rwl_rdlock(&kvs_table->htMutex);
 
-    // lista de bool para verificar se o lock ja foi feito
+    // List of int's to keep track of the locks
     int locks[26] = {0};
 
     // lock the mutex that correspond to the hash of the key
@@ -70,6 +70,7 @@ int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE],
         }
     }
 
+    // Write the key-value pairs
     for (size_t i = 0; i < num_pairs; i++) {
         if (write_pair(kvs_table, keys[i], values[i]) != 0) {
             fprintf(stderr, "Failed to write keypair (%s,%s)\n", keys[i],
@@ -96,8 +97,9 @@ int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int fd_out) {
         return 1;
     }
 
-    rwl_rdlock(&kvs_table->htMutex);
+    // Its not necessary to lock the whole hasTable, since we are only reading
 
+    // List of int's to keep track of the locks
     int locks[26] = {0};
 
     // lock the mutex that correspond to the hash of the key
@@ -133,7 +135,7 @@ int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int fd_out) {
         }
     }
 
-    rwl_unlock(&kvs_table->htMutex);
+    // rwl_unlock(&kvs_table->htMutex);
 
     return 0;
 }
@@ -145,6 +147,7 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int fd_out) {
     }
 
     rwl_rdlock(&kvs_table->htMutex);
+    // List of int's to keep track of the locks
     int locks[26] = {0};
 
     // lock the mutex that correspond to the hash of the key

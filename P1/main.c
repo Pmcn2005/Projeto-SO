@@ -17,14 +17,8 @@ int active_backups = 0;
 int max_backups;
 pthread_mutex_t backup_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-typedef struct {
-    char **file_paths;
-    int num_files;
-    int current_file;
-    pthread_mutex_t mutex;
-} ThreadData;
-
 void kvs_main(char *job_name) {
+    // flag used to control the loop
     int flag = 1;
     int num_backup_name = 0;
 
@@ -36,10 +30,10 @@ void kvs_main(char *job_name) {
     }
 
     // create new path for output file
-
     char *job_out_path = job_name;
     char *ponto = strrchr(job_out_path, '.');
     strcpy(ponto, ".out");
+
     int file_out = open(job_out_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
 
     if (file_out == -1) {
@@ -63,7 +57,7 @@ void kvs_main(char *job_name) {
                     continue;
                 }
 
-                // ordenar keys e values por ordem alfabética de keys
+                // sort the pairs by alphabetical order of keys
                 sortPairs(num_pairs, keys, values);
 
                 if (kvs_write(num_pairs, keys, values)) {
@@ -81,7 +75,7 @@ void kvs_main(char *job_name) {
                     continue;
                 }
 
-                // ordenar keys e values por ordem alfabética de keys
+                // sort the pairs by alphabetical order of keys
                 sortPairs(num_pairs, keys, values);
 
                 if (kvs_read(num_pairs, keys, file_out)) {
@@ -98,7 +92,7 @@ void kvs_main(char *job_name) {
                     continue;
                 }
 
-                // ordenar keys e values por ordem alfabética de keys
+                // sort the pairs by alphabetical order of keys
                 sortPairs(num_pairs, keys, values);
 
                 if (kvs_delete(num_pairs, keys, file_out)) {
@@ -107,7 +101,6 @@ void kvs_main(char *job_name) {
                 break;
 
             case CMD_SHOW:
-
                 kvs_show(file_out);
                 break;
 
@@ -146,26 +139,6 @@ void kvs_main(char *job_name) {
                 active_backups--;
                 mutex_unlock(&backup_mutex);
 
-                // mutex_lock(&backup_mutex);
-
-                // if (active_backups >= max_backups) {
-                //     mutex_unlock(&backup_mutex);
-                //     wait(NULL);
-                //     mutex_lock(&backup_mutex);
-                //     active_backups--;
-                //     // mutex_unlock(&backup_mutex);
-                // }
-                // mutex_unlock(&backup_mutex);
-
-                // if (kvs_backup(job_name, num_backup_name)) {
-                //     fprintf(stderr, "Failed to perform backup.\n");
-                //     num_backup_name--;
-                // }
-
-                // mutex_lock(&backup_mutex);
-                // active_backups++;
-                // mutex_unlock(&backup_mutex);
-
                 break;
 
             case CMD_INVALID:
@@ -190,6 +163,7 @@ void kvs_main(char *job_name) {
 
             case EOC:
                 flag = 0;
+                break;
         }
     }
     close(file_in);
@@ -246,13 +220,18 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    if (num_threads < 0) {
+        fprintf(stderr, "Invalid number of threads\n");
+        closedir(dir);
+        return 1;
+    }
+
     if (kvs_init()) {
         fprintf(stderr, "Failed to initialize KVS\n");
         closedir(dir);
         return 1;
     }
 
-    // char **jobs;
     int job_count = 0;
     char **jobs = getJobs(&job_count, dir, directoryPath);
 
@@ -276,12 +255,13 @@ int main(int argc, char *argv[]) {
 
     kvs_terminate();
 
-    // free(directoryPath);
     for (int i = 0; i < job_count; i++) {
         free(jobs[i]);
     }
     free(jobs);
+
     mutex_destroy(&data.mutex);
+    mutex_destroy(&backup_mutex);
 
     return 0;
 }

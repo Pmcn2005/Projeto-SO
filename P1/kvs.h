@@ -14,7 +14,9 @@ typedef struct KeyNode {
 
 typedef struct HashTable {
     KeyNode *table[TABLE_SIZE];
+    // Locks for each bucket
     pthread_rwlock_t mutex[TABLE_SIZE];
+    // Lock for the whole table
     pthread_rwlock_t htMutex;
 } HashTable;
 
@@ -22,6 +24,9 @@ typedef struct HashTable {
 /// @return Newly created hash table, NULL on failure
 struct HashTable *create_hash_table();
 
+/// Hash function based on key initial.
+/// @param key Lowercase alphabetical string.
+/// @return hash.
 int hash(const char *key);
 
 /// Appends a new key value pair to the hash table.
