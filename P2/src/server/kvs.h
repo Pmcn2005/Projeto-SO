@@ -1,48 +1,55 @@
 #ifndef KEY_VALUE_STORE_H
 #define KEY_VALUE_STORE_H
+
 #define TABLE_SIZE 26
 
 #include <pthread.h>
 #include <stddef.h>
 
 typedef struct KeyNode {
-  char *key;
-  char *value;
-  struct KeyNode *next;
+    char *key;
+    char *value;
+    struct KeyNode *next;
 } KeyNode;
 
 typedef struct HashTable {
-  KeyNode *table[TABLE_SIZE];
-  pthread_rwlock_t tablelock;
+    KeyNode *table[TABLE_SIZE];
+    // Locks for each bucket
+    pthread_rwlock_t mutex[TABLE_SIZE];
+    // Lock for the whole table
+    pthread_rwlock_t htMutex;
 } HashTable;
 
-/// Creates a new KVS hash table.
+/// Creates a new event hash table.
 /// @return Newly created hash table, NULL on failure
 struct HashTable *create_hash_table();
 
+/// Hash function based on key initial.
+/// @param key Lowercase alphabetical string.
+/// @return hash.
 int hash(const char *key);
 
-// Writes a key value pair in the hash table.
-// @param ht The hash table.
-// @param key The key.
-// @param value The value.
-// @return 0 if successful.
+/// Appends a new key value pair to the hash table.
+/// @param ht Hash table to be modified.
+/// @param key Key of the pair to be written.
+/// @param value Value of the pair to be written.
+/// @return 0 if the node was appended successfully, 1 otherwise.
 int write_pair(HashTable *ht, const char *key, const char *value);
 
-// Reads the value of a given key.
-// @param ht The hash table.
-// @param key The key.
-// return the value if found, NULL otherwise.
-char *read_pair(HashTable *ht, const char *key);
-
-/// Deletes a pair from the table.
-/// @param ht Hash table to read from.
+/// Deletes the value of given key.
+/// @param ht Hash table to delete from.
 /// @param key Key of the pair to be deleted.
 /// @return 0 if the node was deleted successfully, 1 otherwise.
+char *read_pair(HashTable *ht, const char *key);
+
+/// Appends a new node to the list.
+/// @param list Event list to be modified.
+/// @param key Key of the pair to read.
+/// @return 0 if the node was appended successfully, 1 otherwise.
 int delete_pair(HashTable *ht, const char *key);
 
 /// Frees the hashtable.
 /// @param ht Hash table to be deleted.
 void free_table(HashTable *ht);
 
-#endif // KVS_H
+#endif  // KVS_H
