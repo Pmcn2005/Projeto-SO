@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <stdio.h>
 
+#include "common/constants.h"
 #include "constants.h"
 
 /// Struct to hold the data for the threads.
@@ -15,6 +16,12 @@ typedef struct {
     int current_file;
     pthread_mutex_t mutex;
 } ThreadData;
+
+typedef struct {
+    char req_pipe[MAX_PIPE_PATH_LENGTH];
+    char res_pipe[MAX_PIPE_PATH_LENGTH];
+    char notif_pipe[MAX_PIPE_PATH_LENGTH];
+} ClientPipes;
 
 /// Returns a list of all .job files in the given directory.
 /// @param job_count Pointer to the number of jobs found.

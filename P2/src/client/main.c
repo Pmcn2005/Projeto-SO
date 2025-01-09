@@ -10,26 +10,29 @@
 #include "src/common/constants.h"
 #include "src/common/io.h"
 
-typedef struct {
-    char *notif_pipe;
-    int *running;
-} NotificationsThreadArgs;
+// typedef struct {
+//     char *notif_pipe;
+//     int *running;
+// } NotificationsThreadArgs;
 
 void *notifications_thread(void *arg) {
-    NotificationsThreadArgs *args = (NotificationsThreadArgs *)arg;
-    char notif_pipe_path[256];
-    strcpy(notif_pipe_path, args->notif_pipe);
+    // NotificationsThreadArgs *args = (NotificationsThreadArgs *)arg;
 
-    int notif_pipe = open(notif_pipe_path, O_RDONLY);
-    if (notif_pipe == -1) {
-        fprintf(stderr, "Failed to open notifications pipe\n");
-        return NULL;
-    }
+    int notif_pipe = *(int *)arg;
 
-    while (*(args->running)) {
+    // char notif_pipe_path[256];
+    // strcpy(notif_pipe_path, args->notif_pipe);
+
+    // int notif_pipe = open(notif_pipe_path, O_RDONLY);
+    // if (notif_pipe == -1) {
+    //     fprintf(stderr, "Failed to open notifications pipe\n");
+    //     return NULL;
+    // }
+
+    while (1) {
         // read notification
         char buffer[80] = {0};
-        if (read_string(notif_pipe, buffer) == -1) {
+        if (read_all(notif_pipe, buffer, 80, NULL) == -1) {
             fprintf(stderr, "Failed to read notification\n");
             break;
         }
@@ -46,10 +49,12 @@ void *notifications_thread(void *arg) {
         // write "(<key>, <value>)" using write_all
         char msg[240] = {0};
         snprintf(msg, 240, "(%s,%s)\n", key, value);
-        write_all(STDOUT_FILENO, msg, 240);
+        if (write_all(STDOUT_FILENO, msg, 240) == -1) {
+            fprintf(stderr, "Failed to write notification\n");
+            break;
+        }
     }
 
-    close(notif_pipe);
     return NULL;
 }
 
@@ -72,8 +77,10 @@ int main(int argc, char *argv[]) {
     strncat(resp_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
     strncat(notif_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
 
+    int notif_pipe = -1;
     // TODO open pipes
-    if (kvs_connect(req_pipe_path, resp_pipe_path, argv[2], notif_pipe_path)) {
+    if (kvs_connect(req_pipe_path, resp_pipe_path, argv[2], notif_pipe_path,
+                    &notif_pipe) != 0) {
         fprintf(stderr, "Failed to connect to the server\n");
         unlink(req_pipe_path);
         unlink(resp_pipe_path);
@@ -81,16 +88,16 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    int running = 1;
-    NotificationsThreadArgs args = {
-        .notif_pipe = notif_pipe_path,
-        .running = &running,
-    };
+    // int running = 1;
+    // NotificationsThreadArgs args = {
+    //     .notif_pipe = notif_pipe_path,
+    //     .running = &running,
+    // };
 
     pthread_t NotificationsThread;
 
     if (pthread_create(&NotificationsThread, NULL, notifications_thread,
-                       &args)) {
+                       &notif_pipe) != 0) {
         fprintf(stderr, "Failed to create notifications thread\n");
         return 1;
     }
@@ -98,12 +105,14 @@ int main(int argc, char *argv[]) {
     while (1) {
         switch (get_next(STDIN_FILENO)) {
             case CMD_DISCONNECT:
+                close(notif_pipe);
+
                 if (kvs_disconnect() != 0) {
                     fprintf(stderr, "Failed to disconnect to the server\n");
                     return 1;
                 }
                 // end notifications thread
-                running = 0;
+                // running = 0;
                 pthread_join(NotificationsThread, NULL);
 
                 printf("Disconnected from server\n");

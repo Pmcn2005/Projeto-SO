@@ -11,11 +11,28 @@
 #include "constants.h"
 #include "operations.h"
 #include "parser.h"
+#include "subscriptions.h"
 #include "utils.h"
 
 int active_backups = 0;
 int max_backups;
 pthread_mutex_t backup_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// manager thread
+void *managerThread(void *arg) {}
+
+// host thread
+void *hostThread(void *arg) {
+    char *pipe_path = (char *)arg;
+    int pipe_fd = open(pipe_path, O_RDWR);
+
+    if (pipe_fd == -1) {
+        fprintf(stderr, "Failed to open pipe\n");
+        return NULL;
+    }
+
+    // ficar a ler da pipe
+}
 
 void kvs_main(char *job_name) {
     // flag used to control the loop
@@ -196,18 +213,19 @@ void *thread_function(void *arg) {
 }
 
 int main(int argc, char *argv[]) {
-    if (argc < 4) {
+    if (argc < 5) {
         fprintf(stderr,
-                "Usage: %s <directory_path> <number_backups> "
-                "<number_threads>\n",
+                "Usage: %s <directory_path> <number_threads> "
+                "<number_backups> <register_pipe_path>\n",
                 argv[0]);
         return 1;
     }
 
     char *directoryPath = argv[1];
     DIR *dir = opendir(directoryPath);
-    max_backups = atoi(argv[2]);
-    int num_threads = atoi(argv[3]);
+    max_backups = atoi(argv[3]);
+    int num_threads = atoi(argv[2]);
+    char *pipe_path = argv[4];
 
     if (dir == NULL) {
         fprintf(stderr, "Failed to open directory\n");
@@ -226,11 +244,19 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    if (mkfifo(pipe_path, 0666) != 0) {
+        fprintf(stderr, "Failed to create pipe\n");
+        closedir(dir);
+        return 1;
+    }
+
     if (kvs_init()) {
         fprintf(stderr, "Failed to initialize KVS\n");
         closedir(dir);
         return 1;
     }
+
+    init_subscriptions();
 
     int job_count = 0;
     char **jobs = getJobs(&job_count, dir, directoryPath);
