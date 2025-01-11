@@ -29,6 +29,10 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
     strncpy(notif_pipe, notif_pipe_path, sizeof(notif_pipe) - 1);
     notif_pipe[sizeof(notif_pipe) - 1] = '\0';
 
+    unlink(req_pipe_path);
+    unlink(resp_pipe_path);
+    unlink(notif_pipe_path);
+
     // create pipes
     if (mkfifo(req_pipe_path, 0666) != 0) {
         perror("[ERR]: mkfifo failed");
@@ -45,54 +49,69 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
         return 1;
     }
 
-    // open pipes
-    req_pipe_fd = open(req_pipe, O_WRONLY);
-
-    if (req_pipe_fd == -1) {
-        perror("[ERR]: open failed");
-        return 1;
-    }
-
-    resp_pipe_fd = open(resp_pipe, O_RDONLY);
-
-    if (resp_pipe_fd == -1) {
-        perror("[ERR]: open failed");
-        return 1;
-    }
-
-    *notif_pipe_fd = open(notif_pipe, O_RDONLY);
-
-    if (*notif_pipe_fd == -1) {
-        perror("[ERR]: open failed");
-        return 1;
-    }
-
     // create message to request connection
-    char msg[123];
+    char msg[121];
     memset(msg, '\0', sizeof(msg));
     msg[0] = OP_CODE_CONNECT;
-    strncpy(msg + 1, req_pipe_path, 40);
-    strncpy(msg + 41, resp_pipe_path, 40);
-    strncpy(msg + 81, notif_pipe_path, 40);
+    memcpy(msg + 1, req_pipe_path, 40);
+    memcpy(msg + 41, resp_pipe_path, 40);
+    memcpy(msg + 81, notif_pipe_path, 40);
+
+    printf("msg: %s\n", msg);
 
     // open pipe server_pipe_path to write
     int server_pipe = open(server_pipe_path, O_WRONLY);
+
+    printf("server pipe opened\n");
 
     if (server_pipe == -1) {
         perror("[ERR]: open failed");
         return 1;
     }
 
-    if (write_all(server_pipe, msg, 256) != 1) {
+    if (write_all(server_pipe, msg, 121) != 1) {
+        perror("[ERR]: write_all failed");
+        return 1;
+    }
+    if (write_all(2, msg, 121) != 1) {
         perror("[ERR]: write_all failed");
         return 1;
     }
 
     close(server_pipe);
 
+    printf("server pipe closed\n");
+
+    resp_pipe_fd = open(resp_pipe, O_RDONLY);
+    printf("resp pipe opened\n");
+
+    if (resp_pipe_fd == -1) {
+        perror("[ERR]: open failed");
+        return 1;
+    }
+    // open pipes
+
+    req_pipe_fd = open(req_pipe, O_WRONLY);
+
+    printf("req pipe opened\n");
+
+    if (req_pipe_fd == -1) {
+        perror("[ERR]: open failed");
+        return 1;
+    }
+
+    *notif_pipe_fd = open(notif_pipe, O_RDONLY);
+
+    printf("notif pipe opened\n");
+
+    if (*notif_pipe_fd == -1) {
+        perror("[ERR]: open failed");
+        return 1;
+    }
+
     // read response
-    char response[2];
-    if (read_all(resp_pipe_fd, response, 2, NULL) != 1) {
+    char response[3];
+    if (read_all(resp_pipe_fd, response, 3, NULL) != 1) {
         perror("[ERR]: read_all failed");
         return 1;
     }
@@ -109,18 +128,18 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
 
 int kvs_disconnect() {
     // create message to request disconnection
-    char msg[1];
+    char msg[2];
     msg[0] = OP_CODE_DISCONNECT;
-
-    if (write_all(req_pipe_fd, msg, 1) != 1) {
+    msg[1] = '\0';
+    if (write_all(req_pipe_fd, msg, 2) != 1) {
         perror("[ERR]: write_all failed");
         return 1;
     }
 
     // read response
-    char response[2];
+    char response[3];
 
-    if (read_all(resp_pipe_fd, response, 2, NULL) != 1) {
+    if (read_all(resp_pipe_fd, response, 3, NULL) != 1) {
         perror("[ERR]: read_all failed");
         return 1;
     }
@@ -151,29 +170,36 @@ int kvs_subscribe(const char *key) {
     memset(msg, '\0', sizeof(msg));
     msg[0] = OP_CODE_SUBSCRIBE;
 
-    strncpy(msg + 1, key, 40);
+    // strncpy(msg + 1, key, 40);
+    memcpy(msg + 1, key, 40);
+
+    printf("msg: %s\n", msg);
 
     if (write_all(req_pipe_fd, msg, 42) != 1) {
         perror("[ERR]: write_all failed");
         return 1;
     }
 
-    // read response
-    char response[2];
+    printf("msg sent\n");
 
-    if (read_all(resp_pipe_fd, response, 2, NULL) != 1) {
+    // read response
+    char response[3];
+
+    if (read_all(resp_pipe_fd, response, 3, NULL) != 1) {
         perror("[ERR]: read_all failed");
         return 1;
     }
 
-    if (response[1] != 0) {
+    printf("response: %s\n", response);
+
+    if (response[1] == 1) {
         write_all(STDOUT_FILENO, "Server returned 1 for operation: subscribe\n",
-                  42);
+                  43);
         return 1;
     }
 
     write_all(STDOUT_FILENO, "Server returned 0 for operation: subscribe\n",
-              42);
+              43);
 
     return 0;
 }

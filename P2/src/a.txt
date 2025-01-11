@@ -1,0 +1,21 @@
+gdb client
+
+b client/parser.c:505
+
+run 
+
+
+
+n - next instruction
+
+s - step into function´
+
+connect()
+
+    read_all(req_pipe)
+    printf
+
+comandos para analisar memória
+    x/50c req_pipe
+    x/s req_pipe
+    p reqpipe

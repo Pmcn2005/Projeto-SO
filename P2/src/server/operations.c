@@ -19,6 +19,26 @@ static struct timespec delay_to_timespec(unsigned int delay_ms) {
     return (struct timespec){delay_ms / 1000, (delay_ms % 1000) * 1000000};
 }
 
+// function to verify if key exists in the hash table
+int key_exists(const char* key) {
+    int hash_key = hash(key);
+
+    rwl_rdlock(&kvs_table->mutex[hash_key]);
+
+    KeyNode* keyNode = kvs_table->table[hash_key];
+
+    while (keyNode != NULL) {
+        if (strcmp(keyNode->key, key) == 0) {
+            rwl_unlock(&kvs_table->mutex[hash_key]);
+            return 1;
+        }
+        keyNode = keyNode->next;
+    }
+
+    rwl_unlock(&kvs_table->mutex[hash_key]);
+    return 0;
+}
+
 int kvs_init() {
     if (kvs_table != NULL) {
         fprintf(stderr, "KVS state has already been initialized\n");

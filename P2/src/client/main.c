@@ -18,21 +18,15 @@
 void *notifications_thread(void *arg) {
     // NotificationsThreadArgs *args = (NotificationsThreadArgs *)arg;
 
+    // printf("Notifications thread started\n");
+
     int notif_pipe = *(int *)arg;
-
-    // char notif_pipe_path[256];
-    // strcpy(notif_pipe_path, args->notif_pipe);
-
-    // int notif_pipe = open(notif_pipe_path, O_RDONLY);
-    // if (notif_pipe == -1) {
-    //     fprintf(stderr, "Failed to open notifications pipe\n");
-    //     return NULL;
-    // }
 
     while (1) {
         // read notification
-        char buffer[80] = {0};
-        if (read_all(notif_pipe, buffer, 80, NULL) == -1) {
+        char buffer[82] = {0};
+
+        if (read_all(notif_pipe, buffer, 82, NULL) == -1) {
             fprintf(stderr, "Failed to read notification\n");
             break;
         }
@@ -41,10 +35,8 @@ void *notifications_thread(void *arg) {
         char key[MAX_STRING_SIZE] = {0};
         char value[MAX_STRING_SIZE] = {0};
 
-        for (int i = 0; i < 40; i++) {
-            key[i] = buffer[i];
-            value[i] = buffer[i + 40];
-        }
+        memcpy(key, buffer, MAX_STRING_SIZE);
+        memcpy(value, buffer + 41, MAX_STRING_SIZE);
 
         // write "(<key>, <value>)" using write_all
         char msg[240] = {0};
@@ -64,10 +56,21 @@ int main(int argc, char *argv[]) {
                 argv[0]);
         return 1;
     }
+    char req_pipe_path[256];
+    memset(req_pipe_path, 0, 256);
 
-    char req_pipe_path[256] = "/tmp/req";
-    char resp_pipe_path[256] = "/tmp/resp";
-    char notif_pipe_path[256] = "/tmp/notif";
+    char resp_pipe_path[256];
+    memset(resp_pipe_path, 0, 256);
+
+    char notif_pipe_path[256];
+    memset(notif_pipe_path, 0, 256);
+
+    strncat(req_pipe_path, "/tmp/req", 255);
+    strncat(resp_pipe_path, "/tmp/resp", 255);
+    strncat(notif_pipe_path, "/tmp/notif", 255);
+    // req_pipe_path[256] = "/tmp/req";
+    // resp_pipe_path[256] = "/tmp/resp";
+    // notif_pipe_path[256] = "/tmp/notif";
 
     char keys[MAX_NUMBER_SUB][MAX_STRING_SIZE] = {0};
     unsigned int delay_ms;
@@ -79,6 +82,7 @@ int main(int argc, char *argv[]) {
 
     int notif_pipe = -1;
     // TODO open pipes
+
     if (kvs_connect(req_pipe_path, resp_pipe_path, argv[2], notif_pipe_path,
                     &notif_pipe) != 0) {
         fprintf(stderr, "Failed to connect to the server\n");
@@ -105,7 +109,9 @@ int main(int argc, char *argv[]) {
     while (1) {
         switch (get_next(STDIN_FILENO)) {
             case CMD_DISCONNECT:
+                printf("Disconnecting from server\n");
                 close(notif_pipe);
+                printf("aqui2\n");
 
                 if (kvs_disconnect() != 0) {
                     fprintf(stderr, "Failed to disconnect to the server\n");
@@ -125,7 +131,9 @@ int main(int argc, char *argv[]) {
                     continue;
                 }
 
-                if (kvs_subscribe(keys[0])) {
+                printf("Subscribing to key %s\n", keys[0]);
+
+                if (kvs_subscribe(keys[0]) == 0) {
                     fprintf(stderr, "Command subscribe failed\n");
                 }
 

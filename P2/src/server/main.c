@@ -2,33 +2,272 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <pthread.h>
+#include <semaphore.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "../common/io.h"
+#include "../common/protocol.h"
 #include "constants.h"
 #include "operations.h"
 #include "parser.h"
 #include "subscriptions.h"
 #include "utils.h"
 
+// variables for backup
 int active_backups = 0;
 int max_backups;
 pthread_mutex_t backup_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+// variables for buffer host-managers
+ClientPipes buffer[MAX_SESSION_COUNT];
+int in = 0;
+int out = 0;
+pthread_mutex_t buffer_mutex = PTHREAD_MUTEX_INITIALIZER;
+sem_t empty, full;
+
+void initialize_buffer() {
+    sem_init(&empty, 0, MAX_SESSION_COUNT);  // Buffer está vazio
+    sem_init(&full, 0, 0);                   // Nenhum item está disponível
+}
+
+// Insere um item no buffer
+void insert_buffer(ClientPipes item) {
+    sem_wait(&empty);                   // Espera espaço disponível
+    pthread_mutex_lock(&buffer_mutex);  // Entra na seção crítica
+
+    buffer[in] = item;                  // Adiciona o item no buffer
+    in = (in + 1) % MAX_SESSION_COUNT;  // Incrementa o índice circular
+
+    pthread_mutex_unlock(&buffer_mutex);  // Sai da seção crítica
+    sem_post(&full);  // Incrementa o contador de itens disponíveis
+}
+
+// Remove um item do buffer
+ClientPipes remove_buffer() {
+    sem_wait(&full);                    // Espera por itens disponíveis
+    pthread_mutex_lock(&buffer_mutex);  // Entra na seção crítica
+
+    ClientPipes item = buffer[out];       // Remove o item do buffer
+    out = (out + 1) % MAX_SESSION_COUNT;  // Incrementa o índice circular
+
+    pthread_mutex_unlock(&buffer_mutex);  // Sai da seção crítica
+    sem_post(&empty);  // Incrementa o contador de espaços disponíveis
+
+    return item;
+}
+
+// Libera os recursos do buffer
+void cleanup_buffer() {
+    sem_destroy(&empty);
+    sem_destroy(&full);
+    pthread_mutex_destroy(&buffer_mutex);
+}
+
 // manager thread
-void *managerThread(void *arg) {}
+void *managerThread() {
+    while (1) {
+        ClientPipes client_pipes = remove_buffer();
+        printf("removed\n");
+
+        printf("manager\n");
+        printf("req_pipe: %s\n", client_pipes.req_pipe);
+        printf("res_pipe: %s\n", client_pipes.res_pipe);
+        printf("notif_pipe: %s\n", client_pipes.notif_pipe);
+
+        int res_pipe_fd = open(client_pipes.res_pipe, O_WRONLY);
+        printf("pipe res opened\n");
+
+        int req_pipe_fd = open(client_pipes.req_pipe, O_RDONLY);
+        printf("pipe req opened\n");
+
+        int notif_pipe_fd = open(client_pipes.notif_pipe, O_WRONLY);
+        printf("pipe notif opened\n");
+
+        // if res_pipe_fd fails to open, we cant send response to client
+        if (res_pipe_fd == -1) {
+            printf("aqui\n");
+            fprintf(stderr, "Failed to open pipe\n");
+            return NULL;
+        }
+
+        // if req_pipe_fd or notif_pipe_fd fails to open, we communicate with
+        // the client that the connection failed
+        if (req_pipe_fd == -1 || notif_pipe_fd == -1) {
+            fprintf(stderr, "Failed to open pipe\n");
+            write_all(res_pipe_fd, "11", 2);
+            close(res_pipe_fd);
+            return NULL;
+        }
+
+        // send response to client
+        char response[3] = {OP_CODE_CONNECT, 0, '\0'};
+        printf("%s", response);
+
+        if (write_all(res_pipe_fd, response, 3) != 1) {
+            perror("[ERR]: write_all failed");
+            return NULL;
+        }
+
+        printf("response sent\n");
+
+        int flag = 1;
+
+        while (flag == 1) {
+            char request[256] = {0};
+            if (read_string(req_pipe_fd, request) == -1) {
+                perror("[ERR]: read_all failed");
+                return NULL;
+            }
+            printf("request: %s\n", request);
+
+            switch (request[0]) {
+                case OP_CODE_SUBSCRIBE:
+                    printf("subscribe\n");
+                    char key[41] = {0};
+
+                    memcpy(key, request + 1, 41);
+
+                    printf("key: %s\n", key);
+
+                    if (key_exists(key) == 0) {
+                        printf("key not exists\n");
+                        if (write_all(res_pipe_fd, "30\0", 3) != 1) {
+                            perror("[ERR]: write_all failed");
+                            return NULL;
+                        }
+                        break;
+                    }
+
+                    add_subscription(key, notif_pipe_fd);
+
+                    printf("subscribed\n");
+
+                    if (write_all(res_pipe_fd, "31\0", 3) != 1) {
+                        perror("[ERR]: write_all failed");
+                        return NULL;
+                    }
+
+                    break;
+
+                case OP_CODE_UNSUBSCRIBE:
+                    printf("unsubscribe\n");
+                    char key_unsub[41] = {0};
+
+                    for (int i = 0; i < 40; i++) {
+                        key_unsub[i] = request[i + 1];
+                    }
+
+                    if (is_suscribed(key_unsub, notif_pipe_fd) == 0) {
+                        if (write_all(res_pipe_fd, "41", 2) != 1) {
+                            perror("[ERR]: write_all failed");
+                            return NULL;
+                        }
+                        break;
+                    }
+
+                    remove_subscription(key_unsub, notif_pipe_fd);
+
+                    if (write_all(res_pipe_fd, "40", 2) != 1) {
+                        perror("[ERR]: write_all failed");
+                        return NULL;
+                    }
+
+                    break;
+
+                case OP_CODE_DISCONNECT:
+                    printf("disconnect\n");
+
+                    if (close(req_pipe_fd) == -1 ||
+                        close(notif_pipe_fd) == -1) {
+                        perror("[ERR]: close failed");
+                        write_all(res_pipe_fd, "21", 2);
+                        close(res_pipe_fd);
+                        flag = 0;
+                        break;
+                    }
+
+                    remove_all_subscriptions(notif_pipe_fd);
+
+                    char response_disconnect[3] = {OP_CODE_DISCONNECT, 0, '\0'};
+
+                    write_all(res_pipe_fd, response_disconnect, 3);
+
+                    close(res_pipe_fd);
+                    flag = 0;
+                    break;
+
+                default:
+                    break;
+            }
+        }
+    }
+}
 
 // host thread
 void *hostThread(void *arg) {
     char *pipe_path = (char *)arg;
     int pipe_fd = open(pipe_path, O_RDWR);
+    // int pipe_fd = open(pipe_path, O_RDONLY);
 
     if (pipe_fd == -1) {
         fprintf(stderr, "Failed to open pipe\n");
         return NULL;
+    }
+
+    while (1) {
+        char op_code;
+        char req_pipe[41];
+        char res_pipe[41];
+        char notif_pipe[41];
+
+        if (read_all(pipe_fd, &op_code, 1, NULL) != 1) {
+            perror("[ERR]: read_all failed");
+            return NULL;
+        }
+
+        if (op_code == OP_CODE_CONNECT) {
+            printf("opasnf oipamnd fiopo\n");
+
+            if (read_all(pipe_fd, req_pipe, 40, NULL) != 1) {
+                perror("[ERR]: read_all failed");
+                return NULL;
+            }
+            printf("ola\n");
+            req_pipe[40] = '\0';
+
+            if (read_all(pipe_fd, res_pipe, 40, NULL) != 1) {
+                perror("[ERR]: read_all failed");
+                return NULL;
+            }
+            printf("ola1\n");
+            res_pipe[40] = '\0';
+
+            if (read_all(pipe_fd, notif_pipe, 40, NULL) != 1) {
+                perror("[ERR]: read_all failed");
+                return NULL;
+            }
+            printf("ola2\n");
+
+            notif_pipe[40] = '\0';
+        }
+
+        printf("anfitria\n");
+        printf("req_pipe: %s\n", req_pipe);
+        printf("res_pipe: %s\n", res_pipe);
+        printf("notif_pipe: %s\n", notif_pipe);
+
+        ClientPipes client_pipes;
+        memcpy(client_pipes.req_pipe, req_pipe, 41);
+        memcpy(client_pipes.res_pipe, res_pipe, 41);
+        memcpy(client_pipes.notif_pipe, notif_pipe, 41);
+
+        insert_buffer(client_pipes);
+        printf("inserted\n");
     }
 
     // ficar a ler da pipe
@@ -244,6 +483,8 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    unlink(pipe_path);
+
     if (mkfifo(pipe_path, 0666) != 0) {
         fprintf(stderr, "Failed to create pipe\n");
         closedir(dir);
@@ -257,6 +498,16 @@ int main(int argc, char *argv[]) {
     }
 
     init_subscriptions();
+
+    initialize_buffer();
+
+    pthread_t host_thread;
+    pthread_create(&host_thread, NULL, hostThread, pipe_path);
+
+    pthread_t manager_threads[MAX_SESSION_COUNT];
+    for (int i = 0; i < MAX_SESSION_COUNT; i++) {
+        pthread_create(&manager_threads[i], NULL, managerThread, NULL);
+    }
 
     int job_count = 0;
     char **jobs = getJobs(&job_count, dir, directoryPath);
@@ -277,6 +528,12 @@ int main(int argc, char *argv[]) {
 
     for (int i = 0; i < num_threads; i++) {
         pthread_join(threads[i], NULL);
+    }
+
+    pthread_join(host_thread, NULL);
+
+    for (int i = 0; i < MAX_SESSION_COUNT; i++) {
+        pthread_join(manager_threads[i], NULL);
     }
 
     kvs_terminate();

@@ -6,7 +6,7 @@
 #include <stddef.h>
 #include <stdio.h>
 
-#include "common/constants.h"
+#include "../common/constants.h"
 #include "constants.h"
 
 /// Struct to hold the data for the threads.

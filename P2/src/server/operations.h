@@ -3,6 +3,11 @@
 
 #include <stddef.h>
 
+/// Checks if a key exists in the KVS.
+/// @param key Key to check.
+/// @return 1 if the key exists, 0 otherwise.
+int key_exists(const char* key);
+
 /// Initializes the KVS state.
 /// @return 0 if the KVS state was initialized successfully, 1 otherwise.
 int kvs_init();

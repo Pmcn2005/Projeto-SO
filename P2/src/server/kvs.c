@@ -4,6 +4,7 @@
 #include <stdlib.h>
 
 #include "string.h"
+#include "subscriptions.h"
 #include "utils.h"
 
 int hash(const char *key) {
@@ -35,7 +36,7 @@ int write_pair(HashTable *ht, const char *key, const char *value) {
         if (strcmp(keyNode->key, key) == 0) {
             free(keyNode->value);
             keyNode->value = strdup(value);
-
+            notify_subscribers(key, value);
             return 0;
         }
         keyNode = keyNode->next;  // Move to the next node
@@ -93,6 +94,8 @@ int delete_pair(HashTable *ht, const char *key) {
             free(keyNode->key);
             free(keyNode->value);
             free(keyNode);  // Free the key node itself
+
+            notify_subscribers(key, "DELETED");
 
             return 0;  // Exit the function
         }

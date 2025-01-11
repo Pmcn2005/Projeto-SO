@@ -2,11 +2,12 @@
 
 #include <fcntl.h>
 #include <pthread.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-#include "common/io.h"
+#include "../common/io.h"
 
 static Subscription *subscriptions[HASH_SIZE];
 
@@ -28,7 +29,7 @@ void init_subscriptions() {
     }
 }
 
-void add_subscription(const char *key, const char *fifo_path) {
+void add_subscription(const char *key, const int fifo_fd) {
     int index = hash_function(key);
 
     pthread_mutex_lock(&subscriptions[index]->mutex);
@@ -52,14 +53,14 @@ void add_subscription(const char *key, const char *fifo_path) {
 
     // Adicionar o FIFO à lista de subscritores
     FifoNode *node = malloc(sizeof(FifoNode));
-    strcpy(node->fifo_path, fifo_path);
+    node->fd = fifo_fd;
     node->next = sub->fifo_list;
     sub->fifo_list = node;
 
     pthread_mutex_unlock(&subscriptions[index]->mutex);
 }
 
-void remove_subscription(const char *key, const char *fifo_path) {
+void remove_subscription(const char *key, const int fifo_fd) {
     int index = hash_function(key);
 
     pthread_mutex_lock(&subscriptions[index]->mutex);
@@ -73,7 +74,7 @@ void remove_subscription(const char *key, const char *fifo_path) {
         FifoNode **indirect = &sub->fifo_list;
         while (*indirect) {
             FifoNode *node = *indirect;
-            if (strcmp(node->fifo_path, fifo_path) == 0) {
+            if (node->fd == fifo_fd) {
                 *indirect = node->next;
                 free(node);
                 break;
@@ -98,16 +99,20 @@ void notify_subscribers(const char *key, const char *new_value) {
     if (sub) {
         FifoNode *node = sub->fifo_list;
         while (node) {
-            int fd = open(node->fifo_path, O_WRONLY);
-            if (fd != -1) {
-                char message[82];  // 40 para chave + 40 para valor + '\0'
-                snprintf(message, sizeof(message), "%s,%s", key, new_value);
+            char message[82];  // 40 para chave + 40 para valor + '\0'
+            char key_msg[41];
+            char key_value[41];
+            memset(key_msg, '\0', sizeof(key_msg));
+            memset(key_value, '\0', sizeof(key_value));
+            strncpy(key_msg, key, 40);
+            strncpy(key_value, new_value, 40);
 
-                if (write_all(fd, message, strlen(message) + 1) != 1) {
-                    perror("Failed to write to FIFO");
-                }
-                close(fd);
+            snprintf(message, sizeof(message), "%s%s", key_msg, key_value);
+
+            if (write_all(node->fd, message, strlen(message) + 1) != 1) {
+                perror("[ERR]: write_all failed");
             }
+
             node = node->next;
         }
     }
@@ -115,7 +120,7 @@ void notify_subscribers(const char *key, const char *new_value) {
     pthread_mutex_unlock(&subscriptions[index]->mutex);
 }
 
-void remove_all_subscriptions(const char *fifo_path) {
+void remove_all_subscriptions(const int fifo_fd) {
     for (int i = 0; i < HASH_SIZE; i++) {
         pthread_mutex_lock(&subscriptions[i]->mutex);
 
@@ -124,7 +129,7 @@ void remove_all_subscriptions(const char *fifo_path) {
             FifoNode **indirect = &sub->fifo_list;
             while (*indirect) {
                 FifoNode *node = *indirect;
-                if (strcmp(node->fifo_path, fifo_path) == 0) {
+                if (node->fd == fifo_fd) {
                     *indirect = node->next;
                     free(node);
                 } else {
@@ -137,4 +142,29 @@ void remove_all_subscriptions(const char *fifo_path) {
 
         pthread_mutex_unlock(&subscriptions[i]->mutex);
     }
+}
+
+int is_suscribed(const char *key, const int fifo_fd) {
+    int index = hash_function(key);
+
+    pthread_mutex_lock(&subscriptions[index]->mutex);
+
+    Subscription *sub = subscriptions[index];
+    while (sub && strcmp(sub->key, key) != 0) {
+        sub = (Subscription *)sub->fifo_list;  // Avançar na lista de colisões
+    }
+
+    if (sub) {
+        FifoNode *node = sub->fifo_list;
+        while (node) {
+            if (node->fd == fifo_fd) {
+                pthread_mutex_unlock(&subscriptions[index]->mutex);
+                return 1;
+            }
+            node = node->next;
+        }
+    }
+
+    pthread_mutex_unlock(&subscriptions[index]->mutex);
+    return 0;
 }
