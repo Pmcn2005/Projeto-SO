@@ -73,10 +73,6 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
         perror("[ERR]: write_all failed");
         return 1;
     }
-    if (write_all(2, msg, 121) != 1) {
-        perror("[ERR]: write_all failed");
-        return 1;
-    }
 
     close(server_pipe);
 
