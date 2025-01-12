@@ -72,25 +72,15 @@ void cleanup_buffer() {
 void *managerThread() {
     while (1) {
         ClientPipes client_pipes = remove_buffer();
-        printf("removed\n");
-
-        printf("manager\n");
-        printf("req_pipe: %s\n", client_pipes.req_pipe);
-        printf("res_pipe: %s\n", client_pipes.res_pipe);
-        printf("notif_pipe: %s\n", client_pipes.notif_pipe);
 
         int res_pipe_fd = open(client_pipes.res_pipe, O_WRONLY);
-        printf("pipe res opened\n");
 
         int req_pipe_fd = open(client_pipes.req_pipe, O_RDONLY);
-        printf("pipe req opened\n");
 
         int notif_pipe_fd = open(client_pipes.notif_pipe, O_WRONLY);
-        printf("pipe notif opened\n");
 
         // if res_pipe_fd fails to open, we cant send response to client
         if (res_pipe_fd == -1) {
-            printf("aqui\n");
             fprintf(stderr, "Failed to open pipe\n");
             return NULL;
         }
@@ -99,31 +89,25 @@ void *managerThread() {
         // the client that the connection failed
         if (req_pipe_fd == -1 || notif_pipe_fd == -1) {
             fprintf(stderr, "Failed to open pipe\n");
-            write_all(res_pipe_fd, "11", 2);
+
+            char response_connect[3] = {OP_CODE_CONNECT, '1', '\0'};
+            write_all(res_pipe_fd, response_connect, 2);
             close(res_pipe_fd);
             return NULL;
         }
 
         // send response to client
         char response[3] = {OP_CODE_CONNECT, 0, '\0'};
-        printf("%s", response);
 
         if (write_all(res_pipe_fd, response, 3) != 1) {
             perror("[ERR]: write_all failed");
             return NULL;
         }
 
-        printf("response sent\n");
-
         int flag = 1;
 
         while (flag == 1) {
             char opcode;
-
-            // if (read_string(req_pipe_fd, request) == -1) {
-            //     perror("[ERR]: read_all failed");
-            //     return NULL;
-            // }
 
             if (read_all(req_pipe_fd, &opcode, 1, NULL) == -1) {
                 perror("[ERR]: read_all failed");
@@ -132,20 +116,14 @@ void *managerThread() {
 
             switch (opcode) {
                 case OP_CODE_SUBSCRIBE:
-                    printf("subscribe\n");
                     char key[41] = {0};
 
                     if (read_all(req_pipe_fd, key, 40, NULL) == -1) {
                         perror("[ERR]: read_all failed");
                         return NULL;
                     }
-                    // printf("%s\n", key);
-
-                    // memcpy(key, request + 1, 41);
 
                     if (key_exists(key) == 0) {
-                        printf("key not exists\n");
-
                         char response_subscribe[3] = {OP_CODE_SUBSCRIBE, '0',
                                                       '\0'};
 
@@ -159,8 +137,6 @@ void *managerThread() {
 
                     add_subscription(key, notif_pipe_fd);
 
-                    printf("subscribed\n");
-
                     char response_subscribe[3] = {OP_CODE_SUBSCRIBE, '1', '\0'};
 
                     if (write_all(res_pipe_fd, response_subscribe, 3) != 1) {
@@ -171,7 +147,6 @@ void *managerThread() {
                     break;
 
                 case OP_CODE_UNSUBSCRIBE:
-                    printf("unsubscribe\n");
                     char key_unsub[41] = {0};
 
                     if (read_all(req_pipe_fd, key_unsub, 40, NULL) == -1) {
@@ -204,12 +179,13 @@ void *managerThread() {
                     break;
 
                 case OP_CODE_DISCONNECT:
-                    printf("disconnect\n");
 
                     if (close(req_pipe_fd) == -1 ||
                         close(notif_pipe_fd) == -1) {
                         perror("[ERR]: close failed");
-                        write_all(res_pipe_fd, "21", 2);
+                        char response_disconnect[3] = {OP_CODE_DISCONNECT, '1',
+                                                       '\0'};
+                        write_all(res_pipe_fd, response_disconnect, 2);
                         close(res_pipe_fd);
                         flag = 0;
                         break;
@@ -237,7 +213,6 @@ void *managerThread() {
 void *hostThread(void *arg) {
     char *pipe_path = (char *)arg;
     int pipe_fd = open(pipe_path, O_RDWR);
-    // int pipe_fd = open(pipe_path, O_RDONLY);
 
     if (pipe_fd == -1) {
         fprintf(stderr, "Failed to open pipe\n");
@@ -256,21 +231,18 @@ void *hostThread(void *arg) {
         }
 
         if (op_code == OP_CODE_CONNECT) {
-            printf("opasnf oipamnd fiopo\n");
-
             if (read_all(pipe_fd, req_pipe, 40, NULL) != 1) {
                 perror("[ERR]: read_all failed");
                 return NULL;
             }
 
-            printf("ola\n");
             req_pipe[40] = '\0';
 
             if (read_all(pipe_fd, res_pipe, 40, NULL) != 1) {
                 perror("[ERR]: read_all failed");
                 return NULL;
             }
-            printf("ola1\n");
+
             res_pipe[40] = '\0';
 
             if (read_all(pipe_fd, notif_pipe, 40, NULL) != 1) {
@@ -278,14 +250,7 @@ void *hostThread(void *arg) {
                 return NULL;
             }
 
-            printf("ola2\n");
-
             notif_pipe[40] = '\0';
-
-            printf("anfitria\n");
-            printf("req_pipe: %s\n", req_pipe);
-            printf("res_pipe: %s\n", res_pipe);
-            printf("notif_pipe: %s\n", notif_pipe);
 
             ClientPipes client_pipes;
             memcpy(client_pipes.req_pipe, req_pipe, 41);
@@ -293,7 +258,6 @@ void *hostThread(void *arg) {
             memcpy(client_pipes.notif_pipe, notif_pipe, 41);
 
             insert_buffer(client_pipes);
-            printf("inserted\n");
         }
     }
 

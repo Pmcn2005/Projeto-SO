@@ -1,6 +1,6 @@
 WRITE [(antonio,jose)(andrei,barb)]
 WAIT 10000
-WRITE [(andrei,gay)]
+WRITE [(andrei,lindo)]
 WAIT 10000
 DELETE [antonio]
 DELETE [andrei]

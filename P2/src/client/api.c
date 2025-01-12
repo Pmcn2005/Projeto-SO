@@ -57,12 +57,8 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
     memcpy(msg + 41, resp_pipe_path, 40);
     memcpy(msg + 81, notif_pipe_path, 40);
 
-    printf("msg: %s\n", msg);
-
     // open pipe server_pipe_path to write
     int server_pipe = open(server_pipe_path, O_WRONLY);
-
-    printf("server pipe opened\n");
 
     if (server_pipe == -1) {
         perror("[ERR]: open failed");
@@ -76,10 +72,7 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
 
     close(server_pipe);
 
-    printf("server pipe closed\n");
-
     resp_pipe_fd = open(resp_pipe, O_RDONLY);
-    printf("resp pipe opened\n");
 
     if (resp_pipe_fd == -1) {
         perror("[ERR]: open failed");
@@ -89,16 +82,12 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
 
     req_pipe_fd = open(req_pipe, O_WRONLY);
 
-    printf("req pipe opened\n");
-
     if (req_pipe_fd == -1) {
         perror("[ERR]: open failed");
         return 1;
     }
 
     *notif_pipe_fd = open(notif_pipe, O_RDONLY);
-
-    printf("notif pipe opened\n");
 
     if (*notif_pipe_fd == -1) {
         perror("[ERR]: open failed");
@@ -169,14 +158,10 @@ int kvs_subscribe(const char *key) {
     // strncpy(msg + 1, key, 40);
     memcpy(msg + 1, key, 40);
 
-    printf("msg: %s\n", msg);
-
     if (write_all(req_pipe_fd, msg, 42) != 1) {
         perror("[ERR]: write_all failed");
         return 1;
     }
-
-    printf("msg sent\n");
 
     // read response
     char response[3];
@@ -185,8 +170,6 @@ int kvs_subscribe(const char *key) {
         perror("[ERR]: read_all failed");
         return 1;
     }
-
-    printf("response: %s\n", response);
 
     if (response[1] == '1') {
         write_all(STDOUT_FILENO, "Server returned 1 for operation: subscribe\n",
@@ -235,29 +218,3 @@ int kvs_unsubscribe(const char *key) {
 
     return 0;
 }
-
-// char msg[256] = OP_CODE_CONNECT;
-
-// for (int i = 1; i < 41; i++) {
-//     if (i < strlen(req_pipe_path)) {
-//         msg[i] = req_pipe_path[i];
-//     } else {
-//         msg[i] = '\0';
-//     }
-// }
-
-// for (int i = 1; i < 41; i++) {
-//     if (i < strlen(resp_pipe_path)) {
-//         msg[i + 40] = resp_pipe_path[i];
-//     } else {
-//         msg[i + 40] = '\0';
-//     }
-// }
-
-// for (int i = 1; i < 41; i++) {
-//     if (i < strlen(notif_pipe_path)) {
-//         msg[i + 80] = notif_pipe_path[i];
-//     } else {
-//         msg[i + 80] = '\0';
-//     }
-// }

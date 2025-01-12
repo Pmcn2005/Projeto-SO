@@ -124,8 +124,6 @@ int main(int argc, char *argv[]) {
                     continue;
                 }
 
-                printf("Subscribing to key %s\n", keys[0]);
-
                 if (kvs_subscribe(keys[0]) == 0) {
                     fprintf(stderr, "Command subscribe failed\n");
                 }
@@ -139,8 +137,8 @@ int main(int argc, char *argv[]) {
                     continue;
                 }
 
-                if (kvs_unsubscribe(keys[0])) {
-                    fprintf(stderr, "Command subscribe failed\n");
+                if (kvs_unsubscribe(keys[0]) == 1) {
+                    fprintf(stderr, "Command unsubscribe failed\n");
                 }
 
                 break;
