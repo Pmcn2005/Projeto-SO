@@ -49,6 +49,8 @@ int write_pair(HashTable *ht, const char *key, const char *value) {
     keyNode->next = ht->table[index];  // Link to existing nodes
     ht->table[index] = keyNode;  // Place new key node at the start of the list
 
+    notify_subscribers(key, value);
+
     return 0;
 }
 

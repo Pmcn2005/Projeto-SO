@@ -118,25 +118,39 @@ void *managerThread() {
         int flag = 1;
 
         while (flag == 1) {
-            char request[256] = {0};
-            if (read_string(req_pipe_fd, request) == -1) {
+            char opcode;
+
+            // if (read_string(req_pipe_fd, request) == -1) {
+            //     perror("[ERR]: read_all failed");
+            //     return NULL;
+            // }
+
+            if (read_all(req_pipe_fd, &opcode, 1, NULL) == -1) {
                 perror("[ERR]: read_all failed");
                 return NULL;
             }
-            printf("request: %s\n", request);
 
-            switch (request[0]) {
+            switch (opcode) {
                 case OP_CODE_SUBSCRIBE:
                     printf("subscribe\n");
                     char key[41] = {0};
 
-                    memcpy(key, request + 1, 41);
+                    if (read_all(req_pipe_fd, key, 40, NULL) == -1) {
+                        perror("[ERR]: read_all failed");
+                        return NULL;
+                    }
+                    // printf("%s\n", key);
 
-                    printf("key: %s\n", key);
+                    // memcpy(key, request + 1, 41);
 
                     if (key_exists(key) == 0) {
                         printf("key not exists\n");
-                        if (write_all(res_pipe_fd, "30\0", 3) != 1) {
+
+                        char response_subscribe[3] = {OP_CODE_SUBSCRIBE, '0',
+                                                      '\0'};
+
+                        if (write_all(res_pipe_fd, response_subscribe, 3) !=
+                            1) {
                             perror("[ERR]: write_all failed");
                             return NULL;
                         }
@@ -147,7 +161,9 @@ void *managerThread() {
 
                     printf("subscribed\n");
 
-                    if (write_all(res_pipe_fd, "31\0", 3) != 1) {
+                    char response_subscribe[3] = {OP_CODE_SUBSCRIBE, '1', '\0'};
+
+                    if (write_all(res_pipe_fd, response_subscribe, 3) != 1) {
                         perror("[ERR]: write_all failed");
                         return NULL;
                     }
@@ -158,12 +174,17 @@ void *managerThread() {
                     printf("unsubscribe\n");
                     char key_unsub[41] = {0};
 
-                    for (int i = 0; i < 40; i++) {
-                        key_unsub[i] = request[i + 1];
+                    if (read_all(req_pipe_fd, key_unsub, 40, NULL) == -1) {
+                        perror("[ERR]: read_all failed");
+                        return NULL;
                     }
 
                     if (is_suscribed(key_unsub, notif_pipe_fd) == 0) {
-                        if (write_all(res_pipe_fd, "41", 2) != 1) {
+                        char response_unsubscribe[3] = {OP_CODE_UNSUBSCRIBE,
+                                                        '1', '\0'};
+
+                        if (write_all(res_pipe_fd, response_unsubscribe, 3) !=
+                            1) {
                             perror("[ERR]: write_all failed");
                             return NULL;
                         }
@@ -172,7 +193,10 @@ void *managerThread() {
 
                     remove_subscription(key_unsub, notif_pipe_fd);
 
-                    if (write_all(res_pipe_fd, "40", 2) != 1) {
+                    char response_unsubscribe[3] = {OP_CODE_UNSUBSCRIBE, '0',
+                                                    '\0'};
+
+                    if (write_all(res_pipe_fd, response_unsubscribe, 3) != 1) {
                         perror("[ERR]: write_all failed");
                         return NULL;
                     }
@@ -193,7 +217,8 @@ void *managerThread() {
 
                     remove_all_subscriptions(notif_pipe_fd);
 
-                    char response_disconnect[3] = {OP_CODE_DISCONNECT, 0, '\0'};
+                    char response_disconnect[3] = {OP_CODE_DISCONNECT, '0',
+                                                   '\0'};
 
                     write_all(res_pipe_fd, response_disconnect, 3);
 
@@ -237,6 +262,7 @@ void *hostThread(void *arg) {
                 perror("[ERR]: read_all failed");
                 return NULL;
             }
+
             printf("ola\n");
             req_pipe[40] = '\0';
 
@@ -251,23 +277,24 @@ void *hostThread(void *arg) {
                 perror("[ERR]: read_all failed");
                 return NULL;
             }
+
             printf("ola2\n");
 
             notif_pipe[40] = '\0';
+
+            printf("anfitria\n");
+            printf("req_pipe: %s\n", req_pipe);
+            printf("res_pipe: %s\n", res_pipe);
+            printf("notif_pipe: %s\n", notif_pipe);
+
+            ClientPipes client_pipes;
+            memcpy(client_pipes.req_pipe, req_pipe, 41);
+            memcpy(client_pipes.res_pipe, res_pipe, 41);
+            memcpy(client_pipes.notif_pipe, notif_pipe, 41);
+
+            insert_buffer(client_pipes);
+            printf("inserted\n");
         }
-
-        printf("anfitria\n");
-        printf("req_pipe: %s\n", req_pipe);
-        printf("res_pipe: %s\n", res_pipe);
-        printf("notif_pipe: %s\n", notif_pipe);
-
-        ClientPipes client_pipes;
-        memcpy(client_pipes.req_pipe, req_pipe, 41);
-        memcpy(client_pipes.res_pipe, res_pipe, 41);
-        memcpy(client_pipes.notif_pipe, notif_pipe, 41);
-
-        insert_buffer(client_pipes);
-        printf("inserted\n");
     }
 
     // ficar a ler da pipe

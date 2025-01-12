@@ -50,7 +50,7 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
     }
 
     // create message to request connection
-    char msg[121];
+    char msg[122];
     memset(msg, '\0', sizeof(msg));
     msg[0] = OP_CODE_CONNECT;
     memcpy(msg + 1, req_pipe_path, 40);
@@ -69,7 +69,7 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
         return 1;
     }
 
-    if (write_all(server_pipe, msg, 121) != 1) {
+    if (write_all(server_pipe, msg, 122) != 1) {
         perror("[ERR]: write_all failed");
         return 1;
     }
@@ -112,7 +112,7 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
         return 1;
     }
 
-    if (response[1] != 0) {
+    if (response[1] == '1') {
         write_all(STDOUT_FILENO, "Server returned 1 for operation: connect\n",
                   41);
         return 1;
@@ -140,7 +140,7 @@ int kvs_disconnect() {
         return 1;
     }
 
-    if (response[1] != 0) {
+    if (response[1] == '1') {
         write_all(STDOUT_FILENO,
                   "Server returned 1 for operation: disconnect\n", 44);
         return 1;
@@ -188,7 +188,7 @@ int kvs_subscribe(const char *key) {
 
     printf("response: %s\n", response);
 
-    if (response[1] == 1) {
+    if (response[1] == '1') {
         write_all(STDOUT_FILENO, "Server returned 1 for operation: subscribe\n",
                   43);
         return 1;
@@ -217,21 +217,21 @@ int kvs_unsubscribe(const char *key) {
     }
 
     // read response
-    char response[2];
+    char response[3];
 
-    if (read_all(resp_pipe_fd, response, 2, NULL) != 1) {
+    if (read_all(resp_pipe_fd, response, 3, NULL) != 1) {
         perror("[ERR]: read_all failed");
         return 1;
     }
 
-    if (response[1] != 0) {
+    if (response[1] == '1') {
         write_all(STDOUT_FILENO,
-                  "Server returned 1 for operation: unsubscribe\n", 44);
+                  "Server returned 1 for operation: unsubscribe\n", 45);
         return 1;
     }
 
     write_all(STDOUT_FILENO, "Server returned 0 for operation: unsubscribe\n",
-              44);
+              45);
 
     return 0;
 }

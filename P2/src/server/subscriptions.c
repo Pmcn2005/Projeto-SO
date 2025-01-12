@@ -88,6 +88,7 @@ void remove_subscription(const char *key, const int fifo_fd) {
 
 void notify_subscribers(const char *key, const char *new_value) {
     int index = hash_function(key);
+    // printf("%s %s\n", key, new_value);
 
     pthread_mutex_lock(&subscriptions[index]->mutex);
 
@@ -100,17 +101,15 @@ void notify_subscribers(const char *key, const char *new_value) {
         FifoNode *node = sub->fifo_list;
         while (node) {
             char message[82];  // 40 para chave + 40 para valor + '\0'
-            char key_msg[41];
-            char key_value[41];
-            memset(key_msg, '\0', sizeof(key_msg));
-            memset(key_value, '\0', sizeof(key_value));
-            strncpy(key_msg, key, 40);
-            strncpy(key_value, new_value, 40);
 
-            snprintf(message, sizeof(message), "%s%s", key_msg, key_value);
+            memset(message, '\0', 82);
+            memcpy(message, key, sizeof(key) - 1);
+            memcpy(message + 41, new_value, sizeof(new_value) - 1);
 
-            if (write_all(node->fd, message, strlen(message) + 1) != 1) {
-                perror("[ERR]: write_all failed");
+            if (node->fd != 0) {
+                if (write_all(node->fd, message, sizeof(message)) != 1) {
+                    perror("[ERR]: write_all failed");
+                }
             }
 
             node = node->next;

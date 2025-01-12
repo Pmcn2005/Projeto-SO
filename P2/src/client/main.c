@@ -10,30 +10,30 @@
 #include "src/common/constants.h"
 #include "src/common/io.h"
 
-// typedef struct {
-//     char *notif_pipe;
-//     int *running;
-// } NotificationsThreadArgs;
+int flag = 0;
 
 void *notifications_thread(void *arg) {
-    // NotificationsThreadArgs *args = (NotificationsThreadArgs *)arg;
-
-    // printf("Notifications thread started\n");
-
     int notif_pipe = *(int *)arg;
 
     while (1) {
         // read notification
-        char buffer[82] = {0};
+        char buffer[82];
 
         if (read_all(notif_pipe, buffer, 82, NULL) == -1) {
             fprintf(stderr, "Failed to read notification\n");
             break;
+        };
+
+        if (flag == 1) {
+            return NULL;
         }
 
         // parse notification
-        char key[MAX_STRING_SIZE] = {0};
-        char value[MAX_STRING_SIZE] = {0};
+        char key[MAX_STRING_SIZE];
+        char value[MAX_STRING_SIZE];
+
+        memset(key, '\0', sizeof(key));
+        memset(value, '\0', sizeof(value));
 
         memcpy(key, buffer, MAX_STRING_SIZE);
         memcpy(value, buffer + 41, MAX_STRING_SIZE);
@@ -41,6 +41,7 @@ void *notifications_thread(void *arg) {
         // write "(<key>, <value>)" using write_all
         char msg[240] = {0};
         snprintf(msg, 240, "(%s,%s)\n", key, value);
+
         if (write_all(STDOUT_FILENO, msg, 240) == -1) {
             fprintf(stderr, "Failed to write notification\n");
             break;
@@ -68,9 +69,6 @@ int main(int argc, char *argv[]) {
     strncat(req_pipe_path, "/tmp/req", 255);
     strncat(resp_pipe_path, "/tmp/resp", 255);
     strncat(notif_pipe_path, "/tmp/notif", 255);
-    // req_pipe_path[256] = "/tmp/req";
-    // resp_pipe_path[256] = "/tmp/resp";
-    // notif_pipe_path[256] = "/tmp/notif";
 
     char keys[MAX_NUMBER_SUB][MAX_STRING_SIZE] = {0};
     unsigned int delay_ms;
@@ -92,12 +90,6 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // int running = 1;
-    // NotificationsThreadArgs args = {
-    //     .notif_pipe = notif_pipe_path,
-    //     .running = &running,
-    // };
-
     pthread_t NotificationsThread;
 
     if (pthread_create(&NotificationsThread, NULL, notifications_thread,
@@ -109,16 +101,17 @@ int main(int argc, char *argv[]) {
     while (1) {
         switch (get_next(STDIN_FILENO)) {
             case CMD_DISCONNECT:
-                printf("Disconnecting from server\n");
+                // flag used by NotificationsThread to know the client want to
+                // disconnect
+                flag = 1;
+
                 close(notif_pipe);
-                printf("aqui2\n");
 
                 if (kvs_disconnect() != 0) {
                     fprintf(stderr, "Failed to disconnect to the server\n");
                     return 1;
                 }
                 // end notifications thread
-                // running = 0;
                 pthread_join(NotificationsThread, NULL);
 
                 printf("Disconnected from server\n");
