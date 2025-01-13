@@ -1,6 +1,11 @@
 WRITE [(antonio,jose)(andrei,barb)]
-WAIT 10000
-WRITE [(andrei,lindo)]
+WAIT 15000
+WRITE [(andrei,lindo)(andrei,gay)]
+WRITE [(andrei,bonito)]
+DELETE [andrei]
+WRITE [(andrei,deslumbrante)]
+WRITE [(antonio,homosexual)]
+WRITE [(andrei,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)]
 WAIT 10000
 DELETE [antonio]
 DELETE [andrei]

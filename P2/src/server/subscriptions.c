@@ -7,6 +7,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "../common/constants.h"
 #include "../common/io.h"
 
 static Subscription *subscriptions[HASH_SIZE];
@@ -88,7 +89,6 @@ void remove_subscription(const char *key, const int fifo_fd) {
 
 void notify_subscribers(const char *key, const char *new_value) {
     int index = hash_function(key);
-    // printf("%s %s\n", key, new_value);
 
     pthread_mutex_lock(&subscriptions[index]->mutex);
 
@@ -103,10 +103,11 @@ void notify_subscribers(const char *key, const char *new_value) {
             char message[82];  // 40 para chave + 40 para valor + '\0'
 
             memset(message, '\0', 82);
-            memcpy(message, key, sizeof(key) - 1);
-            memcpy(message + 41, new_value, sizeof(new_value) - 1);
+            memcpy(message, key, MAX_STRING_SIZE);
+            memcpy(message + 41, new_value, MAX_STRING_SIZE);
+            message[2 * MAX_STRING_SIZE] = '\0';
 
-            if (node->fd != 0) {
+            if (node->fd > 0) {
                 if (write_all(node->fd, message, sizeof(message)) != 1) {
                     perror("[ERR]: write_all failed");
                 }
@@ -161,6 +162,8 @@ void remove_all_subscriptions() {
 
         pthread_mutex_unlock(&subscriptions[i]->mutex);
     }
+
+    init_subscriptions();
 }
 
 int is_suscribed(const char *key, const int fifo_fd) {

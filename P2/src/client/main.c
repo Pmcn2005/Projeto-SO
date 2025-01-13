@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -19,32 +20,39 @@ void *notifications_thread(void *arg) {
         // read notification
         char buffer[82];
 
-        if (read_all(notif_pipe, buffer, 82, NULL) == -1) {
-            fprintf(stderr, "Failed to read notification\n");
-            break;
-        };
+        ssize_t bytes_read = read_all(notif_pipe, buffer, 82, NULL);
+
+        if (bytes_read <= 0) {
+            if (errno = EBADF) {
+                close(notif_pipe);
+                kvs_disconnect();
+                _exit(0);
+            }
+        }
 
         if (flag == 1) {
             return NULL;
         }
 
-        // parse notification
-        char key[MAX_STRING_SIZE];
-        char value[MAX_STRING_SIZE];
+        if (bytes_read > 0) {
+            // parse notification
+            char key[MAX_STRING_SIZE];
+            char value[MAX_STRING_SIZE];
 
-        memset(key, '\0', sizeof(key));
-        memset(value, '\0', sizeof(value));
+            memset(key, '\0', sizeof(key));
+            memset(value, '\0', sizeof(value));
 
-        memcpy(key, buffer, MAX_STRING_SIZE);
-        memcpy(value, buffer + 41, MAX_STRING_SIZE);
+            memcpy(key, buffer, MAX_STRING_SIZE);
+            memcpy(value, buffer + 41, MAX_STRING_SIZE);
 
-        // write "(<key>, <value>)" using write_all
-        char msg[240] = {0};
-        snprintf(msg, 240, "(%s,%s)\n", key, value);
+            // write "(<key>, <value>)" using write_all
+            char msg[240] = {0};
+            snprintf(msg, 240, "(%s,%s)\n", key, value);
 
-        if (write_all(STDOUT_FILENO, msg, 240) == -1) {
-            fprintf(stderr, "Failed to write notification\n");
-            break;
+            if (write_all(STDOUT_FILENO, msg, 240) == -1) {
+                fprintf(stderr, "Failed to write notification\n");
+                break;
+            }
         }
     }
 
@@ -111,8 +119,10 @@ int main(int argc, char *argv[]) {
                     fprintf(stderr, "Failed to disconnect to the server\n");
                     return 1;
                 }
+
                 // end notifications thread
-                pthread_join(NotificationsThread, NULL);
+                // pthread_join(NotificationsThread, NULL);
+                pthread_cancel(NotificationsThread);
 
                 printf("Disconnected from server\n");
                 return 0;

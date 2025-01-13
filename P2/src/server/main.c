@@ -1,8 +1,10 @@
 #include <dirent.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <pthread.h>
 #include <semaphore.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,6 +31,70 @@ int in = 0;
 int out = 0;
 pthread_mutex_t buffer_mutex = PTHREAD_MUTEX_INITIALIZER;
 sem_t empty, full;
+
+// structure to store the cuurent client pipes
+ClientPipesFds current_client_pipes[MAX_SESSION_COUNT] = {0};
+pthread_mutex_t current_client_pipes_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// signal
+volatile sig_atomic_t received_sigusr1 = 0;
+pthread_mutex_t sigusr1_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// add client to current_client_pipes
+void add_client(ClientPipesFds client_pipes) {
+    pthread_mutex_lock(&current_client_pipes_mutex);
+    for (int i = 0; i < MAX_SESSION_COUNT; i++) {
+        if (current_client_pipes[i].req_pipe_fd == 0) {
+            current_client_pipes[i] = client_pipes;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&current_client_pipes_mutex);
+}
+
+// remove client from current_client_pipes
+void remove_client(ClientPipesFds client_pipes) {
+    pthread_mutex_lock(&current_client_pipes_mutex);
+    for (int i = 0; i < MAX_SESSION_COUNT; i++) {
+        if (current_client_pipes[i].req_pipe_fd == client_pipes.req_pipe_fd) {
+            current_client_pipes[i].req_pipe_fd = 0;
+            current_client_pipes[i].res_pipe_fd = 0;
+            current_client_pipes[i].notif_pipe_fd = 0;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&current_client_pipes_mutex);
+}
+
+// signal handler
+void sigusr1_handler(int signum) {
+    if (signum == SIGUSR1) {
+        received_sigusr1 = 1;
+    }
+}
+
+void *thread_signal(void *arg) {
+    sigset_t *sigset = (sigset_t *)arg;
+    int sig;
+    while (1) {
+        if (sigwait(sigset, &sig) == 0 && sig == SIGUSR1) {
+            sigusr1_handler(sig);
+        }
+
+        if (received_sigusr1 == 1) {
+            remove_all_subscriptions();
+            // close all pipes from current_client_pipes
+            pthread_mutex_lock(&current_client_pipes_mutex);
+            for (int i = 0; i < MAX_SESSION_COUNT; i++) {
+                if (current_client_pipes[i].req_pipe_fd != 0) {
+                    close(current_client_pipes[i].notif_pipe_fd);
+                                }
+            }
+            pthread_mutex_unlock(&current_client_pipes_mutex);
+            received_sigusr1 = 0;
+        }
+    }
+}
 
 void initialize_buffer() {
     sem_init(&empty, 0, 1);  // Buffer está vazio
@@ -70,6 +136,16 @@ void cleanup_buffer() {
 
 // manager thread
 void *managerThread() {
+    // ignore SIGUSR1
+    sigset_t set;
+    sigemptyset(&set);
+    sigaddset(&set, SIGUSR1);
+
+    if (pthread_sigmask(SIG_BLOCK, &set, NULL) != 0) {
+        perror("pthread_sigmask");
+        exit(EXIT_FAILURE);
+    }
+
     while (1) {
         ClientPipes client_pipes = remove_buffer();
 
@@ -80,6 +156,14 @@ void *managerThread() {
         int req_pipe_fd = open(client_pipes.req_pipe, O_RDONLY);
 
         int notif_pipe_fd = open(client_pipes.notif_pipe, O_WRONLY);
+
+        ClientPipesFds client_pipes_fds = {
+            .req_pipe_fd = req_pipe_fd,
+            .res_pipe_fd = res_pipe_fd,
+            .notif_pipe_fd = notif_pipe_fd,
+        };
+
+        add_client(client_pipes_fds);
 
         // if res_pipe_fd fails to open, we cant send response to client
         if (res_pipe_fd == -1) {
@@ -111,9 +195,19 @@ void *managerThread() {
         while (flag == 1) {
             char opcode;
 
-            if (read_all(req_pipe_fd, &opcode, 1, NULL) == -1) {
-                perror("[ERR]: read_all failed");
-                return NULL;
+            // if (read_all(req_pipe_fd, &opcode, 1, NULL) == -1) {
+            //     perror("[ERR]: read_all failed");
+            //     return NULL;
+            // }
+
+            ssize_t bytes_read = read_all(req_pipe_fd, &opcode, 1, NULL);
+            if (bytes_read <= 0) {
+                if (errno == EBADF) {
+                    remove_client(client_pipes_fds);
+                    break;
+                }
+                perror("Error reading request from client");
+                break;
             }
 
             switch (opcode) {
@@ -182,8 +276,7 @@ void *managerThread() {
 
                 case OP_CODE_DISCONNECT:
 
-                    if (close(req_pipe_fd) == -1 ||
-                        close(notif_pipe_fd) == -1) {
+                    if (close(req_pipe_fd) == -1) {
                         perror("[ERR]: close failed");
                         char response_disconnect[3] = {OP_CODE_DISCONNECT, '1',
                                                        '\0'};
@@ -202,6 +295,8 @@ void *managerThread() {
 
                     close(res_pipe_fd);
 
+                    remove_client(client_pipes_fds);
+
                     printf("client disconnected\n");
                     flag = 0;
                     break;
@@ -218,9 +313,27 @@ void *hostThread(void *arg) {
     char *pipe_path = (char *)arg;
     int pipe_fd = open(pipe_path, O_RDWR);
 
+    printf("pid: %d\n", getpid());
+
     if (pipe_fd == -1) {
         fprintf(stderr, "Failed to open pipe\n");
         return NULL;
+    }
+
+    sigset_t sigset;
+    sigemptyset(&sigset);
+    sigaddset(&sigset, SIGUSR1);
+
+    if (pthread_sigmask(SIG_BLOCK, &sigset, NULL) != 0) {
+        perror("pthread_sigmask");
+        exit(EXIT_FAILURE);
+    }
+
+    pthread_t signal_thread;
+
+    if (pthread_create(&signal_thread, NULL, thread_signal, &sigset) != 0) {
+        perror("pthread_create");
+        exit(EXIT_FAILURE);
     }
 
     while (1) {
@@ -270,6 +383,16 @@ void *hostThread(void *arg) {
 
 void kvs_main(char *job_name) {
     // flag used to control the loop
+
+    sigset_t set;
+    sigemptyset(&set);
+    sigaddset(&set, SIGUSR1);
+
+    if (pthread_sigmask(SIG_BLOCK, &set, NULL) != 0) {
+        perror("pthread_sigmask");
+        exit(EXIT_FAILURE);
+    }
+
     int flag = 1;
     int num_backup_name = 0;
 
@@ -447,6 +570,15 @@ void *thread_function(void *arg) {
 }
 
 int main(int argc, char *argv[]) {
+    sigset_t set;
+    sigemptyset(&set);
+    sigaddset(&set, SIGUSR1);
+
+    if (pthread_sigmask(SIG_BLOCK, &set, NULL) != 0) {
+        perror("pthread_sigmask");
+        exit(EXIT_FAILURE);
+    }
+
     if (argc < 5) {
         fprintf(stderr,
                 "Usage: %s <directory_path> <number_threads> "

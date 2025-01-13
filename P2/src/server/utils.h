@@ -23,6 +23,12 @@ typedef struct {
     char notif_pipe[MAX_PIPE_PATH_LENGTH];
 } ClientPipes;
 
+typedef struct {
+    int req_pipe_fd;
+    int res_pipe_fd;
+    int notif_pipe_fd;
+} ClientPipesFds;
+
 /// Returns a list of all .job files in the given directory.
 /// @param job_count Pointer to the number of jobs found.
 /// @param dir Directory to be read.
