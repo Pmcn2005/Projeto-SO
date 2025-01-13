@@ -97,7 +97,7 @@ int kvs_connect(char const *req_pipe_path, char const *resp_pipe_path,
     // read response
     char response[3];
     if (read_all(resp_pipe_fd, response, 3, NULL) != 1) {
-        // perror("[ERR]: read_all failed");
+        perror("[ERR]: read_all failed");
         return 1;
     }
 
@@ -125,7 +125,7 @@ int kvs_disconnect() {
     char response[3];
 
     if (read_all(resp_pipe_fd, response, 3, NULL) != 1) {
-        // perror("[ERR]: read_all failed");
+        perror("[ERR]: read_all failed");
         return 1;
     }
 
@@ -167,7 +167,7 @@ int kvs_subscribe(const char *key) {
     char response[3];
 
     if (read_all(resp_pipe_fd, response, 3, NULL) != 1) {
-        // perror("[ERR]: read_all failed");
+        perror("[ERR]: read_all failed");
         return 1;
     }
 
@@ -203,7 +203,7 @@ int kvs_unsubscribe(const char *key) {
     char response[3];
 
     if (read_all(resp_pipe_fd, response, 3, NULL) != 1) {
-        // perror("[ERR]: read_all failed");
+        perror("[ERR]: read_all failed");
         return 1;
     }
 

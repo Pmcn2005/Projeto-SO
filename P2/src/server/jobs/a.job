@@ -1,6 +1,6 @@
 WRITE [(antonio,jose)(andrei,barb)]
 WAIT 15000
-WRITE [(andrei,lindo)(andrei,gay)]
+WRITE [(andrei,lindo)(andrei,hero)]
 WRITE [(andrei,bonito)]
 DELETE [andrei]
 WRITE [(andrei,deslumbrante)]

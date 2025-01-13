@@ -88,7 +88,7 @@ void *thread_signal(void *arg) {
             for (int i = 0; i < MAX_SESSION_COUNT; i++) {
                 if (current_client_pipes[i].req_pipe_fd != 0) {
                     close(current_client_pipes[i].notif_pipe_fd);
-                                }
+                }
             }
             pthread_mutex_unlock(&current_client_pipes_mutex);
             received_sigusr1 = 0;
@@ -194,11 +194,6 @@ void *managerThread() {
 
         while (flag == 1) {
             char opcode;
-
-            // if (read_all(req_pipe_fd, &opcode, 1, NULL) == -1) {
-            //     perror("[ERR]: read_all failed");
-            //     return NULL;
-            // }
 
             ssize_t bytes_read = read_all(req_pipe_fd, &opcode, 1, NULL);
             if (bytes_read <= 0) {

@@ -87,7 +87,6 @@ int main(int argc, char *argv[]) {
     strncat(notif_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
 
     int notif_pipe = -1;
-    // TODO open pipes
 
     if (kvs_connect(req_pipe_path, resp_pipe_path, argv[2], notif_pipe_path,
                     &notif_pipe) != 0) {
@@ -121,7 +120,6 @@ int main(int argc, char *argv[]) {
                 }
 
                 // end notifications thread
-                // pthread_join(NotificationsThread, NULL);
                 pthread_cancel(NotificationsThread);
 
                 printf("Disconnected from server\n");
