@@ -365,9 +365,9 @@ void *hostThread(void *arg) {
             notif_pipe[40] = '\0';
 
             ClientPipes client_pipes;
-            memcpy(client_pipes.req_pipe, req_pipe, 41);
-            memcpy(client_pipes.res_pipe, res_pipe, 41);
-            memcpy(client_pipes.notif_pipe, notif_pipe, 41);
+            memcpy(client_pipes.req_pipe, req_pipe, 40);
+            memcpy(client_pipes.res_pipe, res_pipe, 40);
+            memcpy(client_pipes.notif_pipe, notif_pipe, 40);
 
             insert_buffer(client_pipes);
         }
