@@ -5,11 +5,9 @@
 
 #include <pthread.h>
 #include <stddef.h>
-// define a structure to store all the subscriptions to kvs from all the
-// clients, a key can have multiple subscribers
-// Estrutura para um nó na lista ligada de FIFOs
+
+// Estrutura para armazenar um nó de FIFO
 typedef struct FifoNode {
-    // char fifo_path[40];     // Caminho do FIFO do cliente
     int fd;                 // File descriptor do FIFO do cliente
     struct FifoNode *next;  // Próximo nó na lista
 } FifoNode;
@@ -37,7 +35,10 @@ void remove_subscription(const char *key, const int fifo_fd);
 void notify_subscribers(const char *key, const char *new_value);
 
 // Remove todas as subscrições de um cliente
-void remove_all_subscriptions(const int fifo_fd);
+void remove_all_subscriptions_client(const int fifo_fd);
+
+// Remove todas as subscrições
+void remove_all_subscriptions();
 
 // Verifica se um cliente está subscrito a uma chave
 int is_suscribed(const char *key, const int fifo_fd);

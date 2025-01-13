@@ -119,7 +119,7 @@ void notify_subscribers(const char *key, const char *new_value) {
     pthread_mutex_unlock(&subscriptions[index]->mutex);
 }
 
-void remove_all_subscriptions(const int fifo_fd) {
+void remove_all_subscriptions_client(const int fifo_fd) {
     for (int i = 0; i < HASH_SIZE; i++) {
         pthread_mutex_lock(&subscriptions[i]->mutex);
 
@@ -134,6 +134,26 @@ void remove_all_subscriptions(const int fifo_fd) {
                 } else {
                     indirect = &node->next;
                 }
+            }
+            sub =
+                (Subscription *)sub->fifo_list;  // Avançar na lista de colisões
+        }
+
+        pthread_mutex_unlock(&subscriptions[i]->mutex);
+    }
+}
+
+void remove_all_subscriptions() {
+    for (int i = 0; i < HASH_SIZE; i++) {
+        pthread_mutex_lock(&subscriptions[i]->mutex);
+
+        Subscription *sub = subscriptions[i];
+        while (sub) {
+            FifoNode *node = sub->fifo_list;
+            while (node) {
+                FifoNode *next = node->next;
+                free(node);
+                node = next;
             }
             sub =
                 (Subscription *)sub->fifo_list;  // Avançar na lista de colisões

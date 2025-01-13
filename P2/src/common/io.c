@@ -8,7 +8,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "src/common/constants.h"
+#define MAX_STRING_SIZE 40
 
 int read_all(int fd, void *buffer, size_t size, int *intr) {
     if (intr != NULL && *intr) {

@@ -24,15 +24,15 @@ int max_backups;
 pthread_mutex_t backup_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // variables for buffer host-managers
-ClientPipes buffer[MAX_SESSION_COUNT];
+ClientPipes buffer[1];
 int in = 0;
 int out = 0;
 pthread_mutex_t buffer_mutex = PTHREAD_MUTEX_INITIALIZER;
 sem_t empty, full;
 
 void initialize_buffer() {
-    sem_init(&empty, 0, MAX_SESSION_COUNT);  // Buffer está vazio
-    sem_init(&full, 0, 0);                   // Nenhum item está disponível
+    sem_init(&empty, 0, 1);  // Buffer está vazio
+    sem_init(&full, 0, 0);   // Nenhum item está disponível
 }
 
 // Insere um item no buffer
@@ -40,8 +40,8 @@ void insert_buffer(ClientPipes item) {
     sem_wait(&empty);                   // Espera espaço disponível
     pthread_mutex_lock(&buffer_mutex);  // Entra na seção crítica
 
-    buffer[in] = item;                  // Adiciona o item no buffer
-    in = (in + 1) % MAX_SESSION_COUNT;  // Incrementa o índice circular
+    buffer[in] = item;  // Adiciona o item no buffer
+    in = (in + 1) % 1;  // Incrementa o índice circular
 
     pthread_mutex_unlock(&buffer_mutex);  // Sai da seção crítica
     sem_post(&full);  // Incrementa o contador de itens disponíveis
@@ -52,8 +52,8 @@ ClientPipes remove_buffer() {
     sem_wait(&full);                    // Espera por itens disponíveis
     pthread_mutex_lock(&buffer_mutex);  // Entra na seção crítica
 
-    ClientPipes item = buffer[out];       // Remove o item do buffer
-    out = (out + 1) % MAX_SESSION_COUNT;  // Incrementa o índice circular
+    ClientPipes item = buffer[out];  // Remove o item do buffer
+    out = (out + 1) % 1;             // Incrementa o índice circular
 
     pthread_mutex_unlock(&buffer_mutex);  // Sai da seção crítica
     sem_post(&empty);  // Incrementa o contador de espaços disponíveis
@@ -72,6 +72,8 @@ void cleanup_buffer() {
 void *managerThread() {
     while (1) {
         ClientPipes client_pipes = remove_buffer();
+
+        printf("Client connected\n");
 
         int res_pipe_fd = open(client_pipes.res_pipe, O_WRONLY);
 
@@ -191,7 +193,7 @@ void *managerThread() {
                         break;
                     }
 
-                    remove_all_subscriptions(notif_pipe_fd);
+                    remove_all_subscriptions_client(notif_pipe_fd);
 
                     char response_disconnect[3] = {OP_CODE_DISCONNECT, '0',
                                                    '\0'};
@@ -199,6 +201,8 @@ void *managerThread() {
                     write_all(res_pipe_fd, response_disconnect, 3);
 
                     close(res_pipe_fd);
+
+                    printf("client disconnected\n");
                     flag = 0;
                     break;
 
